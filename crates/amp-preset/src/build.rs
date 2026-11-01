@@ -1,5 +1,8 @@
 use crate::{Library, LibraryError, Preset};
-use amp_dsp::{AmpInfo, Block, BlockKind, Chain, Delay, Drive, Gate, IrCab, NamAmp};
+use amp_dsp::{
+    AmpInfo, Block, BlockKind, Chain, Chorus, Compressor, Delay, Drive, Gate, IrCab, NamAmp,
+    Reverb, TubeAmp,
+};
 
 /// A chain ready for the engine, and what the UI should show about it.
 pub struct BuiltChain {
@@ -35,7 +38,11 @@ pub fn build_chain(
             }
             (BlockKind::Amp | BlockKind::Pedal, None) => Box::new(NamAmp::empty(sample_rate)),
             (BlockKind::Cab, Some(path)) => Box::new(IrCab::load(&path, sample_rate)?),
-            (BlockKind::Cab, None) => Box::new(IrCab::empty(sample_rate)),
+            (BlockKind::Cab, None) => Box::new(IrCab::built_in(sample_rate)?),
+            (BlockKind::Tube, _) => Box::new(TubeAmp::new(sample_rate)),
+            (BlockKind::Compressor, _) => Box::new(Compressor::new(sample_rate)),
+            (BlockKind::Chorus, _) => Box::new(Chorus::new(sample_rate)),
+            (BlockKind::Reverb, _) => Box::new(Reverb::new(sample_rate)),
         };
         for index in 0..block_preset.kind.params().len() {
             block.set_param(index, block_preset.param(index));
@@ -43,6 +50,7 @@ pub fn build_chain(
         chain.push(block, !block_preset.enabled);
         captures.push(capture);
     }
+    chain.settle(sample_rate);
     Ok(BuiltChain { chain, captures })
 }
 

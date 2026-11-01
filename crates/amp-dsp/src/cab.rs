@@ -1,11 +1,12 @@
-use crate::{Block, DspError, MAX_BLOCK, db_to_gain, smooth::Smoothed};
+use crate::{Block, DspError, MAX_BLOCK, db_to_gain, filter::Biquad, smooth::Smoothed};
 use fft_convolver::FFTConvolver;
 use std::path::Path;
 
 /// Cabinet IRs hold their useful energy in the first half second. Anything
 /// longer is a room, and costs CPU on every block.
 const MAX_IR_SECONDS: f32 = 0.5;
-const PARTITION: usize = 256;
+const PARTITION: usize = 64;
+const BUILT_IN_IR_SECONDS: f32 = 0.08;
 
 /// Convolves with a speaker cabinet impulse response. With no IR loaded it
 /// passes audio through untouched.
@@ -22,6 +23,30 @@ impl IrCab {
             dry: vec![0.0; MAX_BLOCK],
             level: Smoothed::new(1.0, sample_rate),
         }
+    }
+
+    /// An original closed-back cabinet voice, shaped from filters so it needs no
+    /// recorded IR: a bass bump, a dip in the low mids, an upper-mid peak, and a
+    /// steep roll-off above that, which is what tames an amp's fizz.
+    pub fn built_in(sample_rate: u32) -> Result<Self, DspError> {
+        let rate = sample_rate as f32;
+        let mut filters = [
+            Biquad::high_pass(rate, 85.0, 0.8),
+            Biquad::peak(rate, 115.0, 1.2, 4.0),
+            Biquad::peak(rate, 420.0, 0.9, -3.0),
+            Biquad::peak(rate, 2_500.0, 1.4, 5.0),
+            Biquad::low_pass(rate, 5_200.0, 0.7),
+            Biquad::low_pass(rate, 5_200.0, 0.7),
+            Biquad::low_pass(rate, 7_500.0, 0.7),
+        ];
+        let mut impulse = vec![0.0; (BUILT_IN_IR_SECONDS * rate) as usize];
+        impulse[0] = 1.0;
+        for sample in &mut impulse {
+            *sample = filters
+                .iter_mut()
+                .fold(*sample, |signal, filter| filter.process(signal));
+        }
+        Self::from_samples(&impulse, sample_rate, sample_rate)
     }
 
     /// Loads a WAV impulse response. Must run off the audio thread.
@@ -145,6 +170,26 @@ mod tests {
         cab.process(&mut buffer);
         let ratio = buffer[3] / buffer[0];
         assert!((ratio - 0.5).abs() < 1e-3, "ratio was {ratio}");
+    }
+
+    #[test]
+    fn the_built_in_voice_rolls_off_highs() {
+        let mut cab = IrCab::built_in(48_000).unwrap();
+        let level_at = |cab: &mut IrCab, frequency: f32| {
+            cab.reset();
+            let mut buffer: Vec<f32> = (0..9_600)
+                .map(|i| (std::f32::consts::TAU * frequency * i as f32 / 48_000.0).sin())
+                .collect();
+            for chunk in buffer.chunks_mut(64) {
+                cab.process(chunk);
+            }
+            buffer[4_800..]
+                .iter()
+                .fold(0.0_f32, |peak, s| peak.max(s.abs()))
+        };
+        let presence = level_at(&mut cab, 2_500.0);
+        let fizz = level_at(&mut cab, 12_000.0);
+        assert!(fizz < presence * 0.03, "{presence} {fizz}");
     }
 
     #[test]

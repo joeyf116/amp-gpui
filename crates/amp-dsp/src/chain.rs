@@ -1,5 +1,8 @@
 use crate::{Block, MAX_BLOCK};
 
+/// Long enough for the slowest control smoothing to finish.
+const SETTLE_SECONDS: f32 = 0.12;
+
 struct Slot {
     block: Box<dyn Block>,
     bypassed: bool,
@@ -52,6 +55,15 @@ impl Chain {
                 self.reset();
             }
         }
+    }
+
+    /// Runs silence through the chain so every smoothed control reaches its
+    /// setting. Without this a new chain starts at unity gain and spends its
+    /// first few milliseconds too loud, which is heard as a pop on every edit.
+    /// Allocates, so it belongs off the audio thread.
+    pub fn settle(&mut self, sample_rate: u32) {
+        let mut silence = vec![0.0; (SETTLE_SECONDS * sample_rate as f32) as usize];
+        self.process(&mut silence);
     }
 
     pub fn reset(&mut self) {
@@ -113,6 +125,28 @@ mod tests {
             LONGEST.load(std::sync::atomic::Ordering::Relaxed),
             MAX_BLOCK
         );
+    }
+
+    #[test]
+    fn a_settled_chain_starts_at_its_setting() {
+        use crate::{Drive, Gate};
+        let build = || {
+            let mut drive = Drive::new(48_000);
+            drive.set_param(0, 0.0);
+            drive.set_param(1, -24.0);
+            let mut chain = Chain::default();
+            chain.push(Box::new(Gate::new(48_000)), true);
+            chain.push(Box::new(drive), false);
+            chain
+        };
+        let mut raw = build();
+        let mut settled = build();
+        settled.settle(48_000);
+        let mut raw_output = [0.5; 8];
+        let mut settled_output = [0.5; 8];
+        raw.process(&mut raw_output);
+        settled.process(&mut settled_output);
+        assert!(settled_output[0].abs() < raw_output[0].abs() * 0.5);
     }
 
     #[test]

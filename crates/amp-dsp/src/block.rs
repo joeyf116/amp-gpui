@@ -56,6 +56,11 @@ pub enum BlockKind {
     Pedal,
     Cab,
     Delay,
+    /// The built-in amp model, which needs no capture.
+    Tube,
+    Compressor,
+    Chorus,
+    Reverb,
 }
 
 impl BlockKind {
@@ -67,6 +72,10 @@ impl BlockKind {
             Self::Pedal => "Pedal",
             Self::Cab => "Cabinet",
             Self::Delay => "Delay",
+            Self::Tube => "Understory amp",
+            Self::Compressor => "Compressor",
+            Self::Chorus => "Chorus",
+            Self::Reverb => "Reverb",
         }
     }
 
@@ -90,12 +99,40 @@ impl BlockKind {
             param("feedback", "Feedback", "%", 0.0, 90.0, 30.0),
             param("mix", "Mix", "%", 0.0, 100.0, 20.0),
         ];
+        const TUBE: &[ParamSpec] = &[
+            param("gain", "Gain", "", 0.0, 10.0, 5.0),
+            param("bass", "Bass", "", 0.0, 10.0, 5.0),
+            param("mid", "Mid", "", 0.0, 10.0, 5.0),
+            param("treble", "Treble", "", 0.0, 10.0, 5.0),
+            param("presence", "Presence", "", 0.0, 10.0, 3.0),
+            param("master", "Master", "", 0.0, 10.0, 5.0),
+        ];
+        const COMPRESSOR: &[ParamSpec] = &[
+            param("threshold", "Threshold", "dB", -50.0, 0.0, -24.0),
+            param("ratio", "Ratio", ":1", 1.0, 20.0, 3.0),
+            param("release", "Release", "ms", 30.0, 600.0, 160.0),
+            param("level", "Level", "dB", -12.0, 18.0, 3.0),
+        ];
+        const CHORUS: &[ParamSpec] = &[
+            param("rate", "Rate", "Hz", 0.1, 6.0, 0.8),
+            param("depth", "Depth", "%", 0.0, 100.0, 40.0),
+            param("mix", "Mix", "%", 0.0, 100.0, 40.0),
+        ];
+        const REVERB: &[ParamSpec] = &[
+            param("size", "Size", "%", 0.0, 100.0, 50.0),
+            param("damping", "Damping", "%", 0.0, 100.0, 40.0),
+            param("mix", "Mix", "%", 0.0, 100.0, 20.0),
+        ];
         match self {
             Self::Gate => GATE,
             Self::Drive => DRIVE,
             Self::Amp | Self::Pedal => AMP,
             Self::Cab => CAB,
             Self::Delay => DELAY,
+            Self::Tube => TUBE,
+            Self::Compressor => COMPRESSOR,
+            Self::Chorus => CHORUS,
+            Self::Reverb => REVERB,
         }
     }
 

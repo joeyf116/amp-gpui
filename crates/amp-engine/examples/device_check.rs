@@ -35,7 +35,31 @@ fn pick(devices: &[DeviceOption], flag: &str) -> Option<String> {
     )
 }
 
+fn option(flag: &str) -> Option<String> {
+    let arguments: Vec<String> = std::env::args().collect();
+    let index = arguments.iter().position(|argument| argument == flag)?;
+    arguments.get(index + 1).cloned()
+}
+
+fn mode() -> LatencyMode {
+    #[cfg(feature = "asio")]
+    if option("--asio").is_some() {
+        return LatencyMode::Asio;
+    }
+    if std::env::args().any(|argument| argument == "--exclusive") {
+        LatencyMode::Exclusive
+    } else {
+        LatencyMode::Shared
+    }
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    #[cfg(feature = "asio")]
+    if std::env::args().any(|argument| argument == "--list-asio") {
+        let started = std::time::Instant::now();
+        println!("{:?} in {:?}", Engine::asio_devices(), started.elapsed());
+        return Ok(());
+    }
     let devices = DeviceList::scan()?;
     println!(
         "{} inputs, {} outputs",
@@ -50,11 +74,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             input: pick(&devices.inputs, "--input"),
             output: pick(&devices.outputs, "--output"),
             input_channel: 0,
-            mode: if std::env::args().any(|argument| argument == "--exclusive") {
-                LatencyMode::Exclusive
-            } else {
-                LatencyMode::Shared
-            },
+            mode: mode(),
+            asio_driver: option("--asio"),
         };
         let engine = Engine::start(Box::new(chain), &config)?;
         let info = engine.info();

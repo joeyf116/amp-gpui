@@ -17,6 +17,9 @@ pub struct Settings {
     /// monitoring, at the cost of much higher latency.
     #[serde(default)]
     pub shared_audio: bool,
+    /// Set to run through this interface's ASIO driver.
+    #[serde(default)]
+    pub asio_driver: Option<String>,
 }
 
 /// `AMP_GPUI_DATA` points the app at another folder, which keeps test runs away

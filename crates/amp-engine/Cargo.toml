@@ -5,6 +5,10 @@ version.workspace = true
 edition.workspace = true
 publish.workspace = true
 
+[features]
+# Needs LLVM to build, and downloads Steinberg's ASIO SDK the first time.
+asio = ["cpal/asio"]
+
 [dependencies]
 amp-dsp.workspace = true
 cpal.workspace = true

@@ -10,8 +10,11 @@ mod cab;
 mod chain;
 mod delay;
 mod drive;
+mod effects;
+mod filter;
 mod gate;
 mod smooth;
+mod tube;
 
 pub use amp::{AmpInfo, NamAmp};
 pub use block::{Block, BlockKind, ParamSpec};
@@ -19,7 +22,9 @@ pub use cab::IrCab;
 pub use chain::Chain;
 pub use delay::Delay;
 pub use drive::Drive;
+pub use effects::{Chorus, Compressor, Reverb};
 pub use gate::Gate;
+pub use tube::TubeAmp;
 
 /// The longest slice a block is ever handed in one call. [`Chain::process`]
 /// splits anything longer, so blocks can size their scratch space to this.

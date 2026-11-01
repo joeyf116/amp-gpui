@@ -1,4 +1,4 @@
-﻿[package]
+[package]
 name = "amp-app"
 description = "Guitar amp and effects rig with live monitoring, built on GPUI"
 version.workspace = true
@@ -8,6 +8,10 @@ publish.workspace = true
 [[bin]]
 name = "amp-gpui"
 path = "src/main.rs"
+
+[features]
+default = ["asio"]
+asio = ["amp-engine/asio"]
 
 [dependencies]
 amp-dsp.workspace = true

@@ -14,6 +14,9 @@ use std::{sync::Arc, time::Duration};
 /// The device buffer to ask for. Drivers clamp this to what they can do, and
 /// on Windows shared mode they mostly impose their own period regardless.
 const PREFERRED_BUFFER_FRAMES: u32 = 128;
+/// ASIO drivers really do honor small buffers, unlike Windows shared mode.
+#[cfg(feature = "asio")]
+const ASIO_BUFFER_FRAMES: u32 = 64;
 const QUEUE_FRAMES: usize = 16_384;
 const SCRATCH_FRAMES: usize = 2_048;
 
@@ -44,6 +47,10 @@ pub enum LatencyMode {
     /// them while monitoring runs.
     #[cfg(windows)]
     Exclusive,
+    /// Runs through the interface's own driver, the fastest route there is.
+    /// Input and output have to be on that one interface.
+    #[cfg(feature = "asio")]
+    Asio,
 }
 
 /// An audio device someone can pick.
@@ -122,6 +129,8 @@ pub struct EngineConfig {
     /// The zero-based input channel the guitar is plugged into.
     pub input_channel: usize,
     pub mode: LatencyMode,
+    /// The ASIO driver to use in `LatencyMode::Asio`, by name.
+    pub asio_driver: Option<String>,
 }
 
 /// What the running streams settled on.
@@ -170,11 +179,9 @@ fn find_device(host: &Host, id: Option<&str>, input: bool) -> Result<Device, Eng
     host.device_by_id(&device_id).ok_or_else(gone)
 }
 
-fn stream_config(config: &SupportedStreamConfig) -> StreamConfig {
+fn stream_config(config: &SupportedStreamConfig, preferred: u32) -> StreamConfig {
     let buffer_size = match *config.buffer_size() {
-        SupportedBufferSize::Range { min, max } => {
-            BufferSize::Fixed(PREFERRED_BUFFER_FRAMES.clamp(min, max))
-        }
+        SupportedBufferSize::Range { min, max } => BufferSize::Fixed(preferred.clamp(min, max)),
         SupportedBufferSize::Unknown => BufferSize::Default,
     };
     StreamConfig {
@@ -192,7 +199,176 @@ impl Engine {
             LatencyMode::Shared => Self::start_shared(chain, config),
             #[cfg(windows)]
             LatencyMode::Exclusive => Self::start_exclusive(chain, config),
+            #[cfg(feature = "asio")]
+            LatencyMode::Asio => Self::start_asio(chain, config),
         }
+    }
+
+    /// The ASIO interfaces on this machine. Each driver has to be loaded to
+    /// list it, so this takes a moment and belongs on one thread.
+    #[cfg(feature = "asio")]
+    pub fn asio_devices() -> Vec<DeviceOption> {
+        let Ok(host) = cpal::host_from_id(cpal::HostId::Asio) else {
+            return Vec::new();
+        };
+        let Ok(devices) = host.output_devices() else {
+            return Vec::new();
+        };
+        devices
+            .filter_map(|device| {
+                let name = device.description().ok()?.name().to_owned();
+                let config = device.default_input_config().ok()?;
+                Some(DeviceOption {
+                    id: name.clone(),
+                    name,
+                    channels: config.channels(),
+                    sample_rate: config.sample_rate(),
+                })
+            })
+            .collect()
+    }
+
+    #[cfg(not(feature = "asio"))]
+    pub fn asio_devices() -> Vec<DeviceOption> {
+        Vec::new()
+    }
+
+    #[cfg(feature = "asio")]
+    fn start_asio(chain: Box<Chain>, config: &EngineConfig) -> Result<Self, EngineError> {
+        let host = cpal::host_from_id(cpal::HostId::Asio)?;
+        let wanted = config.asio_driver.as_deref();
+        let device = host
+            .output_devices()?
+            .find(|device| {
+                let name = device.description().ok();
+                let name = name.as_ref().map(|description| description.name());
+                wanted.is_none_or(|wanted| name == Some(wanted))
+            })
+            .ok_or(EngineError::NoOutputDevice)?;
+        let input_config = device.default_input_config()?;
+        let output_config = device.default_output_config()?;
+        let format = output_config.sample_format();
+        match format {
+            SampleFormat::F32 => {
+                Self::run_asio::<f32>(chain, config, &device, &input_config, &output_config)
+            }
+            SampleFormat::I32 => {
+                Self::run_asio::<i32>(chain, config, &device, &input_config, &output_config)
+            }
+            SampleFormat::I24 => {
+                Self::run_asio::<cpal::I24>(chain, config, &device, &input_config, &output_config)
+            }
+            SampleFormat::I16 => {
+                Self::run_asio::<i16>(chain, config, &device, &input_config, &output_config)
+            }
+            other => Err(EngineError::UnsupportedFormat("ASIO", other)),
+        }
+    }
+
+    #[cfg(feature = "asio")]
+    fn run_asio<T>(
+        chain: Box<Chain>,
+        config: &EngineConfig,
+        device: &Device,
+        input_config: &SupportedStreamConfig,
+        output_config: &SupportedStreamConfig,
+    ) -> Result<Self, EngineError>
+    where
+        T: cpal::SizedSample + cpal::FromSample<f32> + Send + 'static,
+        f32: cpal::FromSample<T>,
+    {
+        use cpal::Sample;
+
+        let name = device.description()?.name().to_owned();
+        let input_stream_config = stream_config(input_config, ASIO_BUFFER_FRAMES);
+        let output_stream_config = stream_config(output_config, ASIO_BUFFER_FRAMES);
+        // Both callbacks run in the same driver pass, one buffer apart at most.
+        let start_target = match output_stream_config.buffer_size {
+            BufferSize::Fixed(frames) => frames as usize,
+            BufferSize::Default => START_TARGET,
+        };
+        let input_channels = usize::from(input_config.channels()).max(1);
+        let output_channels = usize::from(output_config.channels()).max(1);
+        let input_channel = config.input_channel.min(input_channels - 1);
+
+        let (processor, controller) = processor(chain);
+        let meters = controller.meters.clone();
+        let (mut queue_tx, queue_rx) = RingBuffer::<f32>::new(QUEUE_FRAMES);
+        for _ in 0..start_target {
+            let _ = queue_tx.push(0.0);
+        }
+        let input_rate = input_config.sample_rate();
+        let output_rate = output_config.sample_rate();
+        let mut pump = Pump::new(
+            queue_rx,
+            processor,
+            meters.clone(),
+            input_rate,
+            output_rate,
+            start_target,
+        );
+
+        let input_meters = meters.clone();
+        let input = device.build_input_stream(
+            input_stream_config,
+            move |data: &[T], callback: &cpal::InputCallbackInfo| {
+                let timestamp = callback.timestamp();
+                input_meters
+                    .set_input_device_latency(timestamp.callback.duration_since(timestamp.capture));
+                for frame in data.chunks_exact(input_channels) {
+                    if queue_tx
+                        .push(frame[input_channel].to_sample::<f32>())
+                        .is_err()
+                    {
+                        input_meters.add_xrun();
+                        return;
+                    }
+                }
+            },
+            log_stream_error(&meters),
+            None,
+        )?;
+
+        let output_meters = meters.clone();
+        let mut scratch = vec![0.0_f32; SCRATCH_FRAMES];
+        let queue_rate = input_rate as f32;
+        let output = device.build_output_stream(
+            output_stream_config,
+            move |data: &mut [T], callback: &cpal::OutputCallbackInfo| {
+                for frames in data.chunks_mut(SCRATCH_FRAMES * output_channels) {
+                    let mono = &mut scratch[..frames.len() / output_channels];
+                    pump.render(mono);
+                    for (frame, sample) in frames.chunks_mut(output_channels).zip(mono.iter()) {
+                        frame.fill(sample.to_sample::<T>());
+                    }
+                }
+                let timestamp = callback.timestamp();
+                output_meters.set_output_device_latency(
+                    timestamp.playback.duration_since(timestamp.callback),
+                );
+                output_meters
+                    .set_queue_latency(Duration::from_secs_f32(pump.queued_frames() / queue_rate));
+            },
+            log_stream_error(&meters),
+            None,
+        )?;
+
+        input.play()?;
+        output.play()?;
+        Ok(Self {
+            controller,
+            info: EngineInfo {
+                input_name: name.clone(),
+                output_name: name,
+                input_rate,
+                output_rate,
+                mode: LatencyMode::Asio,
+            },
+            _streams: Streams::Shared {
+                _input: input,
+                _output: output,
+            },
+        })
     }
 
     #[cfg(windows)]
@@ -283,7 +459,7 @@ impl Engine {
 
         let input_meters = meters.clone();
         let input = input_device.build_input_stream(
-            stream_config(&input_config),
+            stream_config(&input_config, PREFERRED_BUFFER_FRAMES),
             move |data: &[f32], callback: &cpal::InputCallbackInfo| {
                 let timestamp = callback.timestamp();
                 input_meters
@@ -303,7 +479,7 @@ impl Engine {
         let output_meters = meters.clone();
         let mut scratch = vec![0.0_f32; SCRATCH_FRAMES];
         let output = output_device.build_output_stream(
-            stream_config(&output_config),
+            stream_config(&output_config, PREFERRED_BUFFER_FRAMES),
             move |data: &mut [f32], callback: &cpal::OutputCallbackInfo| {
                 for frames in data.chunks_mut(SCRATCH_FRAMES * output_channels) {
                     let mono = &mut scratch[..frames.len() / output_channels];

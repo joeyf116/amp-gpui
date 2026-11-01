@@ -1,0 +1,3 @@
+# The ASIO backend generates its bindings with libclang.
+[env]
+LIBCLANG_PATH = { value = "C:\\Program Files\\LLVM\\bin", force = false }

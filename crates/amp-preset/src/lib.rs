@@ -8,12 +8,14 @@
 
 mod build;
 mod catalog;
+mod factory;
 mod library;
 mod practice;
 mod preset;
 
 pub use build::{BuiltChain, build_chain};
 pub use catalog::{CaptureEntry, CaptureKind};
+pub use factory::factory_tones;
 pub use library::{Library, LibraryError, PresetEntry};
 pub use practice::{PracticeSection, PracticeSheet};
 pub use preset::{AssetKind, AssetRef, BlockPreset, Preset, SCHEMA_VERSION};

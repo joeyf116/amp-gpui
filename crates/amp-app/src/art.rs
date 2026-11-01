@@ -122,11 +122,14 @@ pub struct GearArt {
 impl Shape {
     pub fn for_kind(kind: BlockKind, name: &str) -> Self {
         match kind {
-            BlockKind::Amp => Self::Head,
+            BlockKind::Amp | BlockKind::Tube => Self::Head,
             BlockKind::Cab => Self::Cabinet,
             BlockKind::Gate => Self::Stomp(PedalLook::Gate),
             BlockKind::Drive => Self::Stomp(PedalLook::Overdrive),
             BlockKind::Delay => Self::Stomp(PedalLook::Delay),
+            BlockKind::Compressor => Self::Stomp(PedalLook::Compressor),
+            BlockKind::Chorus => Self::Stomp(PedalLook::Modulation),
+            BlockKind::Reverb => Self::Stomp(PedalLook::Reverb),
             BlockKind::Pedal => Self::Stomp(PedalLook::from_text(name)),
         }
     }

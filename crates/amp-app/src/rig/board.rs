@@ -19,14 +19,17 @@ use gpui_kit::{
     *,
 };
 
-const TONE3000_URL: &str = "https://www.tone3000.com";
 const GAP: f32 = 22.0;
 const SETTINGS_KNOB: Pixels = px(72.);
-const BUILT_IN: [BlockKind; 4] = [
-    BlockKind::Gate,
-    BlockKind::Drive,
-    BlockKind::Delay,
+const BUILT_IN: [BlockKind; 8] = [
+    BlockKind::Tube,
     BlockKind::Cab,
+    BlockKind::Compressor,
+    BlockKind::Drive,
+    BlockKind::Gate,
+    BlockKind::Chorus,
+    BlockKind::Delay,
+    BlockKind::Reverb,
 ];
 
 /// Something in the rack that can go on the board.
@@ -337,7 +340,6 @@ impl Rig {
                 .join("  /  ")
         });
         let doubled_cab = kind == BlockKind::Cab
-            && block.asset.is_some()
             && self
                 .captures
                 .iter()
@@ -564,20 +566,13 @@ impl Rig {
                             })),
                     ),
             )
-            .child(
-                Button::new("browse-tone3000")
-                    .small()
-                    .ghost()
-                    .label("Browse TONE3000")
-                    .on_click(|_, _, cx| cx.open_url(TONE3000_URL)),
-            )
             .when(empty, |rack| {
                 rack.child(
                     div()
                         .mt_2()
                         .text_xs()
                         .text_color(fog())
-                        .child("Download captures from TONE3000, add them here, then drag them onto the board."),
+                        .child("Add your own NAM captures here, then drag them onto the board."),
                 )
             })
             .when(!amp_items.is_empty(), |rack| {
