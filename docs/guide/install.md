@@ -60,3 +60,5 @@ You can move the library anywhere with the **Folder** button. See
 [Share tones](sharing.md).
 
 Next, [connect your interface](setup.md).
+
+<small>![ASIO compatible](../assets/asio-compatible.png){ .asio-logo width="80" }<br>ASIO is a registered trademark of Steinberg Media Technologies GmbH.</small>

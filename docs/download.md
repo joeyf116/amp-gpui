@@ -31,11 +31,13 @@ result with the contents of that file:
 certutil -hashfile amp-gpui-setup.exe SHA256
 ```
 
-## Audio drivers in the installer
+## License
 
-The installer includes the two Windows audio routes, exclusive and shared. ASIO
-isn't in it yet, so for the lowest latency
-[build from source](guide/install.md). See
-[Monitoring and latency](guide/monitoring.md) for how the routes compare.
+Amp GPUI is free software under the
+[GNU General Public License, version 3](https://github.com/joeyf116/amp-gpui/blob/main/LICENSE).
+Each release on GitHub has the source for that version, including the ASIO SDK
+source it was built from.
 
 Next, [connect your interface](guide/setup.md).
+
+<small>![ASIO compatible](assets/asio-compatible.png){ .asio-logo width="80" }<br>ASIO is a registered trademark of Steinberg Media Technologies GmbH.</small>

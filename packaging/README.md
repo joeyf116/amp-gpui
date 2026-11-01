@@ -18,7 +18,7 @@ Installers are built by `.github/workflows/release.yml` with
     ```
 
 The workflow tests and builds, then publishes a GitHub Release with
-`amp-gpui-setup.exe` and its checksum. The docs
+`amp-gpui-setup.exe`, its checksum, and the ASIO SDK source. The docs
 [Download](https://joeyf116.github.io/amp-gpui/download/) page reads the release
 list from GitHub, so it needs no change. A version with a suffix, such as
 `0.2.0-beta.1`, is marked as a prerelease and doesn't become the main download.
@@ -28,18 +28,16 @@ the workflow by hand. The installer lands on the run page as an artifact.
 
 ## ASIO
 
-Published installers leave ASIO out, through `ASIO_ARGS` at the top of the
-workflow. Steinberg's ASIO SDK allows distribution of a built app in one of two
-ways:
+Installers include ASIO, using Steinberg's ASIO SDK under its GPLv3 option. That's
+why the app is GPLv3, and it comes with two duties:
 
-- under GPLv3, which means the whole app is released under GPLv3, or
-- under the proprietary license, which needs an agreement signed by Steinberg
-  before publishing.
-
-See `LICENSE.txt` in the SDK. Once either is in place, empty `ASIO_ARGS`, and
-take the "Audio drivers in the installer" section off `docs/download.md`. An ASIO
-build also needs the attribution from the SDK's usage guidelines: "ASIO is a
-registered trademark of Steinberg Media Technologies GmbH."
+- **Source.** GPLv3 covers the SDK code in the binary, and the repo doesn't hold
+  that code. So the workflow publishes the SDK's `common` and `host` folders, the
+  ones the build compiles, as `asio-sdk-source.zip` on each release.
+- **Trademark.** The ASIO name and logo follow the usage guidelines in the SDK.
+  Each docs page that mentions ASIO ends with the logo and this line, and the
+  Audio setup panel shows the line:
+  "ASIO is a registered trademark of Steinberg Media Technologies GmbH."
 
 ## Code signing
 

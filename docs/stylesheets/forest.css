@@ -30,3 +30,10 @@
   --md-default-bg-color: #0f1110;
   --md-typeset-a-color: #7fd6a0;
 }
+
+/* The ASIO logo is black on clear, so it needs a light backing on the dark theme. */
+.asio-logo {
+  background: #fff;
+  border-radius: 3px;
+  padding: 4px;
+}

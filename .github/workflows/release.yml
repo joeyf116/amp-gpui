@@ -16,12 +16,6 @@ on:
 permissions:
   contents: read
 
-env:
-  # ASIO stays out of published builds until its license is settled: Steinberg's
-  # SDK allows distribution under GPLv3 or a signed agreement. Empty this once
-  # one of those is in place. See packaging/README.md.
-  ASIO_ARGS: --no-default-features
-
 jobs:
   build:
     # Pinned because this image ships Inno Setup.
@@ -36,6 +30,16 @@ jobs:
         with:
           tool: cargo-about
 
+      # The app is GPLv3, so each release carries the SDK source it was built
+      # from. See packaging/README.md.
+      - shell: bash
+        run: |
+          curl -sSfL -o asio-sdk.zip https://www.steinberg.net/asiosdk
+          unzip -q asio-sdk.zip -d asio-sdk
+          echo "CPAL_ASIO_DIR=$(pwd -W)/asio-sdk/ASIOSDK" >> "$GITHUB_ENV"
+          mkdir dist
+          (cd asio-sdk && 7z a ../dist/asio-sdk-source.zip ASIOSDK/common ASIOSDK/host ASIOSDK/LICENSE.txt)
+
       - id: version
         shell: bash
         run: |
@@ -48,17 +52,17 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - run: >
-          cargo test --release --locked ${{ env.ASIO_ARGS }}
+          cargo test --release --locked
           -p amp-dsp -p amp-engine -p amp-preset -p amp-tone3000
 
       # The subsystem is set here so the installed app opens no console window,
       # while `cargo run` keeps its log output.
       - run: >
-          cargo rustc -p amp-app --release --locked --bin amp-gpui ${{ env.ASIO_ARGS }} --
+          cargo rustc -p amp-app --release --locked --bin amp-gpui --
           -C link-arg=/SUBSYSTEM:WINDOWS -C link-arg=/ENTRY:mainCRTStartup
 
       - run: >
-          cargo about generate --workspace --locked ${{ env.ASIO_ARGS }}
+          cargo about generate --workspace --locked
           --config packaging/about.toml
           --output-file target/release/THIRD-PARTY-LICENSES.html
           packaging/about.hbs

@@ -4,6 +4,7 @@ description = "Presets and the self-managed tone library"
 version.workspace = true
 edition.workspace = true
 publish.workspace = true
+license.workspace = true
 
 [dependencies]
 amp-dsp.workspace = true

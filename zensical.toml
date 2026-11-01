@@ -4,6 +4,7 @@ site_description = "A desktop guitar amp and effects rig written in Rust, with N
 site_url = "https://joeyf116.github.io/amp-gpui/"
 repo_url = "https://github.com/joeyf116/amp-gpui"
 repo_name = "joeyf116/amp-gpui"
+copyright = "GPLv3. ASIO is a registered trademark of Steinberg Media Technologies GmbH."
 edit_uri = "edit/main/docs/"
 extra_css = ["stylesheets/forest.css", "stylesheets/generator.css", "stylesheets/download.css"]
 

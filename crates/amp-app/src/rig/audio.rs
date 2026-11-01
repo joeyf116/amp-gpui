@@ -146,6 +146,13 @@ impl Rig {
                 "Audio driver",
                 Select::new(&self.driver_select).w_full().into_any_element(),
             ))
+            .when(cfg!(feature = "asio"), |panel| {
+                panel.child(
+                    div().text_xs().text_color(fog()).child(
+                        "ASIO is a registered trademark of Steinberg Media Technologies GmbH.",
+                    ),
+                )
+            })
             .when(!asio, |panel| {
                 panel.child(picker(
                     "Guitar in",

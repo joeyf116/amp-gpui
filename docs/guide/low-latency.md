@@ -10,12 +10,6 @@ that interface.
 
 Get the installer from the [Download](../download.md) page.
 
-!!! note "ASIO in the installer"
-
-    Installers don't include ASIO yet. To use step 3 today,
-    [build from source](install.md). Otherwise skip to step 4, which gets you to
-    about 17 ms on the interface we tested.
-
 ## 2. Set up your hardware
 
 1. Plug the interface straight into the computer, not through a USB hub.
@@ -95,3 +89,5 @@ Your interface will differ, and the display only counts what the drivers report.
   [NAM A2 captures](board.md#nam-a2-captures).
 - See [Monitoring and latency](monitoring.md) for how the routes work, and
   [Troubleshooting](troubleshooting.md) for other problems.
+
+<small>![ASIO compatible](../assets/asio-compatible.png){ .asio-logo width="80" }<br>ASIO is a registered trademark of Steinberg Media Technologies GmbH.</small>
