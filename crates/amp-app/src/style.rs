@@ -1,5 +1,6 @@
-//! The look of the app: a pine forest at night, with a faint survey grid, mist
-//! drifting across it, and moss-green light marking what is live.
+//! The look of the app: near-black and near-white neutrals carrying a trace of
+//! green, with the logo's green marking what is live and its off-white for text.
+//! Behind them, a pine forest in smoke, a faint survey grid, and drifting mist.
 
 use crate::{art, knob::disc};
 use gpui_kit::*;
@@ -13,25 +14,25 @@ pub fn moss_glow(alpha: f32) -> Hsla {
 }
 
 pub fn pane() -> Hsla {
-    hsla(0.42, 0.28, 0.05, 0.72)
+    hsla(0.42, 0.05, 0.075, 0.78)
 }
 
 /// The bars at the top and bottom of the window, which sit over the forest.
 pub fn bar() -> Hsla {
-    hsla(0.42, 0.24, 0.045, 0.92)
+    hsla(0.42, 0.05, 0.068, 0.94)
 }
 
 /// Panels that open over everything else.
 pub fn sheet() -> Hsla {
-    hsla(0.42, 0.26, 0.055, 0.985)
+    hsla(0.42, 0.05, 0.088, 0.985)
 }
 
 pub fn hairline() -> Hsla {
-    hsla(0.42, 0.26, 0.62, 0.14)
+    hsla(0.42, 0.06, 0.92, 0.13)
 }
 
 pub fn fog() -> Hsla {
-    hsla(0.4, 0.1, 0.62, 1.0)
+    hsla(0.42, 0.04, 0.66, 1.0)
 }
 
 /// A soft halo in moss light.
@@ -93,12 +94,12 @@ pub fn backdrop(phase: f32) -> impl IntoElement {
                         for layer in 0..SMOKE_LAYERS {
                             let share = 1.0 - layer as f32 / SMOKE_LAYERS as f32;
                             if let Some(path) = disc(center, reach * share) {
-                                window.paint_path(path, hsla(0.42, 0.14, 0.6, 0.0065));
+                                window.paint_path(path, hsla(0.42, 0.03, 0.7, 0.0065));
                             }
                         }
                     }
 
-                    let line = hsla(0.42, 0.3, 0.7, 0.028);
+                    let line = hsla(0.42, 0.05, 0.85, 0.024);
                     let mut x = bounds.origin.x;
                     while x < bounds.right() {
                         window.paint_quad(fill(

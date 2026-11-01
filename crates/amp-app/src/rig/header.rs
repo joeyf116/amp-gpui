@@ -66,7 +66,7 @@ impl Rig {
                     .rounded_md()
                     .border_1()
                     .border_color(hairline())
-                    .bg(hsla(0.42, 0.3, 0.02, 0.7))
+                    .bg(hsla(0.42, 0.05, 0.04, 0.8))
                     .cursor_pointer()
                     .hover(|tone| tone.border_color(moss()))
                     .child(

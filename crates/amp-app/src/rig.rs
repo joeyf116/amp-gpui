@@ -984,7 +984,7 @@ impl Render for Rig {
                 this.toggle_tones(window, cx);
             }))
             .on_action(cx.listener(|this, _: &ToggleGear, _, cx| this.toggle_gear(cx)))
-            .bg(hsla(0.42, 0.3, 0.035, 1.0))
+            .bg(hsla(0.42, 0.05, 0.065, 1.0))
             .text_color(cx.theme().foreground)
             .child(self.render_backdrop())
             .child(

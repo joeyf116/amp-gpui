@@ -1,30 +1,32 @@
-/* The app's look carried over to the docs: dark forest floor, moss-green
-   light, and very little else. The values come from crates/amp-app/src/style.rs. */
+/* The app's look carried over to the docs: near-black and near-white neutrals
+   with a trace of green, and the logo's colors for accents. The values come from
+   crates/amp-app/assets/theme.json. */
 
 :root,
 [data-md-color-scheme="default"] {
-  --md-primary-fg-color: #1f5c3d;
-  --md-primary-fg-color--light: #2d7a53;
-  --md-primary-fg-color--dark: #16442d;
-  --md-primary-bg-color: #f2f7f4;
-  --md-primary-bg-color--light: #f2f7f4b3;
+  --md-primary-fg-color: #171918;
+  --md-primary-fg-color--light: #292c2a;
+  --md-primary-fg-color--dark: #0f1110;
+  --md-primary-bg-color: #eef1ef;
+  --md-primary-bg-color--light: #eef1efb3;
   --md-accent-fg-color: #2d7a53;
   --md-accent-fg-color--transparent: #2d7a531a;
-  --md-accent-bg-color: #f2f7f4;
-  --md-accent-bg-color--light: #f2f7f4b3;
+  --md-accent-bg-color: #f7f8f7;
+  --md-accent-bg-color--light: #f7f8f7b3;
 }
 
 [data-md-color-scheme="slate"] {
   --md-hue: 150;
-  --md-primary-fg-color: #101a15;
-  --md-primary-fg-color--light: #18261f;
-  --md-primary-fg-color--dark: #0a120e;
-  --md-primary-bg-color: #dfe9e3;
-  --md-primary-bg-color--light: #dfe9e3b3;
-  --md-accent-fg-color: #6fce9c;
-  --md-accent-fg-color--transparent: #6fce9c1a;
-  --md-accent-bg-color: #0a120e;
-  --md-accent-bg-color--light: #0a120eb3;
-  --md-default-bg-color: #0a120e;
-  --md-typeset-a-color: #6fce9c;
+  --md-default-bg-color--light: #0f1110b3;
+  --md-primary-fg-color: #141615;
+  --md-primary-fg-color--light: #1f2221;
+  --md-primary-fg-color--dark: #0f1110;
+  --md-primary-bg-color: #eef1ef;
+  --md-primary-bg-color--light: #eef1efb3;
+  --md-accent-fg-color: #7fd6a0;
+  --md-accent-fg-color--transparent: #7fd6a01a;
+  --md-accent-bg-color: #0f1110;
+  --md-accent-bg-color--light: #0f1110b3;
+  --md-default-bg-color: #0f1110;
+  --md-typeset-a-color: #7fd6a0;
 }

@@ -19,6 +19,28 @@ are set once.
 The stage scales each unit to fit the room left in the window, down to about half
 size, so nothing clips on a small window.
 
+## Color
+
+Neutrals come first: near-black surfaces and near-white text, each carrying a trace
+of green so they don't feel cold. Color is reserved for meaning, and it comes from
+the logo.
+
+| Role | Value |
+| --- | --- |
+| Window | `#0f1110` |
+| Panels | `#171918` |
+| Raised and hover | `#1f2221` |
+| Text | `#eef1ef` |
+| Secondary text | `#a3a8a5` |
+| Lines | White at about 12% |
+| Accent, for what's live or selected | `#7fd6a0`, the logo's rings |
+| Highlight | `#e7f2ea`, the logo's waveform |
+
+Amber, red, and blue stay for warnings, errors, and notices. Gear keeps its own paint,
+since a pedal's color helps you tell it apart. The values live in
+`crates/amp-app/assets/theme.json` and `style.rs`, and `docs/stylesheets/forest.css`
+carries them to this site.
+
 ## Tone shelves
 
 The shelves are filtered in `visible`, which has tests of its own. Tags come from the

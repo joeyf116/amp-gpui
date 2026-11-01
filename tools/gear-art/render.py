@@ -578,7 +578,7 @@ def render_cab(exposed):
         canvas.over(lit(albedo, noise(width, height, 2.0) * 0.5, 0.05, 10.0, 0.6), coverage(distance))
     else:
         cloth = weave(canvas, 13.0)
-        albedo = np.ones((height, width, 3), np.float32) * np.array((0.13, 0.155, 0.135), np.float32)
+        albedo = np.ones((height, width, 3), np.float32) * np.array((0.135, 0.142, 0.138), np.float32)
         albedo = albedo * (0.8 + 0.42 * (cloth / 1.1) * (1 + 0.18 * noise(width, height, 3.0)))[..., None]
         canvas.over(lit(albedo, cloth * 1.6, 0.05, 10.0, 0.62), coverage(distance))
     centers = [(0.27, 0.27), (0.73, 0.27), (0.27, 0.73), (0.73, 0.73)]
@@ -652,12 +652,12 @@ def render_stage():
     width, height = 1920, 1200
     x, y = grid(width, height)
     fog = smooth(0.0, 0.62, y / height) * smooth(1.05, 0.6, y / height)
-    rgb = (0.018 + fog[..., None] * 0.9) * np.array((0.07, 0.115, 0.1), np.float32)
+    rgb = (0.018 + fog[..., None] * 0.9) * np.array((0.098, 0.106, 0.102), np.float32)
     state = np.random.default_rng(SEED)
     layers = (
-        (0.2, 34, (0.05, 0.085, 0.074)),
-        (0.45, 20, (0.03, 0.054, 0.047)),
-        (0.8, 11, (0.014, 0.026, 0.022)),
+        (0.2, 34, (0.073, 0.079, 0.076)),
+        (0.45, 20, (0.045, 0.049, 0.047)),
+        (0.8, 11, (0.021, 0.023, 0.022)),
     )
     for layer, (depth, count, tone) in enumerate(layers):
         drawing = Image.new("L", (width, height), 0)
@@ -679,9 +679,9 @@ def render_stage():
         rgb = rgb * (1 - mask[..., None]) + np.array(tone, np.float32) * mask[..., None]
         mist = smooth(-0.4, 0.8, fractal(width, height, 520.0, 4))
         band = smooth(0.3, 0.72, y / height) * smooth(1.1, 0.7, y / height)
-        rgb = rgb + (mist * band * (0.042 - layer * 0.009))[..., None] * np.array((0.66, 0.92, 0.82), np.float32)
+        rgb = rgb + (mist * band * (0.042 - layer * 0.009))[..., None] * np.array((0.84, 0.88, 0.86), np.float32)
     pool = np.exp(-(((x - width / 2) / (width * 0.34)) ** 2 + ((y - height * 0.8) / (height * 0.22)) ** 2))
-    rgb = rgb + pool[..., None] * np.array((0.03, 0.05, 0.042), np.float32)
+    rgb = rgb + pool[..., None] * np.array((0.044, 0.048, 0.046), np.float32)
     vignette = 1 - 0.5 * np.clip(np.hypot((x - width / 2) / (width * 0.62), (y - height * 0.55) / (height * 0.7)), 0, 1) ** 2.4
     rgb = rgb * vignette[..., None]
     # Dither, so the long dark gradients don't band.
@@ -750,7 +750,7 @@ def main():
         save(render_pedal(name), f"pedal_{name}")
     print("heads and cabinets")
     save(render_head((0.038, 0.042, 0.04), (0.11, 0.115, 0.11), (0.45, 0.37, 0.22)), "head_understory")
-    save(render_head((0.075, 0.1, 0.075), (0.17, 0.18, 0.17), (0.17, 0.19, 0.17)), "head_capture")
+    save(render_head((0.07, 0.075, 0.072), (0.17, 0.175, 0.172), (0.17, 0.18, 0.175)), "head_capture")
     save(render_cab(False), "cab_closed")
     save(render_cab(True), "cab_open")
     render_knob_amp().image().resize((150, 150), Image.LANCZOS).save(GEAR / "knob_amp.png")
