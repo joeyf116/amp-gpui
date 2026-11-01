@@ -40,6 +40,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: release
+          # Only main saves, so a tag build can read it and branches add no copies.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-about
@@ -101,6 +103,8 @@ jobs:
           name: installer
           path: dist/*
           if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
 
   publish:
     if: startsWith(github.ref, 'refs/tags/v')
