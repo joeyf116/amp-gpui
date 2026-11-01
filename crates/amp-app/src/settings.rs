@@ -38,6 +38,8 @@ pub struct Settings {
     pub beats: u32,
     #[serde(default = "default_click_db")]
     pub click_db: f32,
+    #[serde(default = "default_song_db")]
+    pub song_db: f32,
     /// Silences the rig while the tuner is open.
     #[serde(default)]
     pub tuner_mute: bool,
@@ -70,6 +72,10 @@ fn default_click_db() -> f32 {
     -12.0
 }
 
+fn default_song_db() -> f32 {
+    -12.0
+}
+
 impl Default for Settings {
     fn default() -> Self {
         Self {
@@ -87,6 +93,7 @@ impl Default for Settings {
             bpm: default_bpm(),
             beats: default_beats(),
             click_db: default_click_db(),
+            song_db: default_song_db(),
             tuner_mute: false,
             key: default_key(),
             scale: String::new(),

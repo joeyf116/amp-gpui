@@ -81,7 +81,8 @@ it**. See the [guide](docs/guide/assistant.md).
 ## Practice tools
 
 Press T for a tuner, a metronome, and a fretboard that shows a key and scale and
-lights up the notes you play.
+lights up the notes you play. Load an MP3 to get its melody as scrolling tab, in time
+with the song.
 
 ## Controls
 

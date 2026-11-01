@@ -87,3 +87,41 @@ guitar, so yours will differ.
 
 The included scales are minor and major pentatonic, blues, major, natural, harmonic,
 and melodic minor, and the Dorian, Phrygian, Lydian, Mixolydian, and Locrian modes.
+
+## Learn a song's melody
+
+Press **Load song** under the neck and pick an MP3. WAV, FLAC, and Ogg files work too.
+The app listens to the whole song, which takes a few seconds, and writes out the melody
+as tab.
+
+- **Play along:** press ++m++ to start monitoring, then **Play**. The song comes through
+  your speakers alongside your rig, so you can play over it. It joins after your rig,
+  so **Output** doesn't change it. The **Song** knob sets its level.
+- **Follow it on the neck:** the note sounding now lights up, green in your chosen scale
+  and amber outside it. The note coming next shows as an outline, so you can get there
+  first.
+- **Read ahead:** the tab scrolls past the line near its left edge. Each number is a fret,
+  and the bar after it shows how long the note rings. The top line is the high E string.
+- **Move around:** click anywhere on the bar under the tab.
+
+Your files stay on your computer. The song is read in place, and the app keeps no copy
+once it closes.
+
+### What to expect
+
+The app follows the strongest single line through the song. That's usually the singer or
+the lead guitar, but it can switch to another instrument where the melody drops out or
+something else gets louder. It gives you one note at a time, so harmonies, chords, and
+bass lines aren't written out. Treat it as a head start to check by ear, not as the real
+tab.
+
+- **Rough spots:** dense mixes, heavily distorted rhythm guitars, and fast runs are hardest.
+  Clean recordings with one clear lead do best.
+- **Frets:** a recording can't say where a note was played, so the tab uses the route that
+  moves your hand least across the whole line, which may not be the original player's.
+- **Range:** a note too low or too high for the first 15 frets moves by octaves to fit.
+- **Tuning:** a recording a little sharp or flat of concert pitch is corrected for. Songs
+  in a dropped or lower tuning still show as if played in standard.
+
+On modeled band recordings, the right note was showing for about 85 to 88 percent of the
+melody's length. Those are synthesized, not real songs, so yours will differ.

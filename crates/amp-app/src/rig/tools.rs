@@ -89,6 +89,7 @@ impl Rig {
     }
 
     pub(super) fn read_tuner(&mut self) {
+        self.follow_song();
         if let Some(engine) = &mut self.engine {
             engine.read_tuner(&mut self.tuner_samples);
             let extra = self.tuner_samples.len().saturating_sub(LISTEN_FRAMES);

@@ -5,12 +5,12 @@
 //! been, and how stiff the string sounds, which differs between two places for
 //! the same pitch. A chord is placed by finding a shape one hand could hold.
 
-use super::{Choice, Rig};
+use super::{Choice, Rig, song::SongPanel};
 use crate::{
     art::PRINT_FONT,
     style::{fog, glow, hairline, moss},
 };
-use amp_dsp::{Pitch, Spectrum, chord_name};
+use amp_dsp::{MelodyNote, Pitch, Spectrum, chord_name};
 use amp_engine::ENGINE_RATE;
 use gpui_kit::{
     component::{
@@ -48,6 +48,18 @@ const HAND_FOLLOW: f32 = 0.4;
 const SETTLE: f32 = 0.3;
 /// The widest stretch a chord shape can use, in frets.
 const CHORD_SPAN: i32 = 4;
+/// What crossing to another string costs a melody, in frets of hand movement.
+const STRING_CHANGE: f32 = 0.15;
+/// What each fret up the neck costs, as players stay low until a line takes them up.
+const NECK_HEIGHT: f32 = 0.12;
+/// What an open string costs a melody, as players mostly fret a line.
+const OPEN_STRING: f32 = 0.2;
+/// How many frets past the first finger the hand reaches without moving.
+const HAND_SPAN: i32 = 3;
+/// A rest longer than this gives the hand time to move, in seconds, and moving
+/// then costs this share of what it does mid-phrase.
+const REST: f32 = 0.5;
+const RESTED_MOVE: f32 = 0.3;
 /// Clean readings of each open string needed to learn it.
 const LEARN_READINGS: usize = 5;
 const STRING_NAMES: [&str; 6] = ["high E", "B", "G", "D", "A", "low E"];
@@ -218,6 +230,89 @@ fn fill_gaps(shape: &mut Vec<(usize, i32)>, notes: &[i32]) {
     shape.extend(gaps);
 }
 
+/// Brings a pitch onto the neck by octaves, so a line that runs past the
+/// guitar's range keeps its shape.
+fn fold_onto_neck(midi: i32) -> i32 {
+    let (lowest, highest) = (TUNING[5], TUNING[0] + FRETS);
+    let mut midi = midi;
+    while midi < lowest {
+        midi += 12;
+    }
+    while midi > highest {
+        midi -= 12;
+    }
+    midi
+}
+
+/// Places a whole melody on the neck. With the full line known up front, the
+/// answer can be the one that moves the hand least from first note to last,
+/// rather than the best guess for each note as it comes. Each step weighs every
+/// hand position that could reach the note, so a run settles into one position
+/// instead of creeping up the neck a fret at a time.
+pub(super) fn finger_line(notes: &[MelodyNote]) -> Vec<(usize, i32)> {
+    /// A hand position, as the fret under the first finger, and a place it plays.
+    type Spot = (i32, usize, i32);
+    let spots: Vec<Vec<Spot>> = notes
+        .iter()
+        .map(|note| {
+            positions(fold_onto_neck(note.midi))
+                .flat_map(|(string, fret)| {
+                    let hands = match fret {
+                        // An open string leaves the hand free, wherever it is.
+                        0 => 1..=FRETS - HAND_SPAN,
+                        _ => (fret - HAND_SPAN).max(1)..=fret.min(FRETS - HAND_SPAN),
+                    };
+                    hands.map(move |hand| (hand, string, fret))
+                })
+                .collect()
+        })
+        .collect();
+    let standing = |(hand, _, fret): &Spot| {
+        *hand as f32 * NECK_HEIGHT + if *fret == 0 { OPEN_STRING } else { 0.0 }
+    };
+    let mut links: Vec<Vec<usize>> = Vec::with_capacity(notes.len());
+    let mut costs: Vec<f32> = Vec::new();
+    for (index, here) in spots.iter().enumerate() {
+        if index == 0 {
+            costs = here.iter().map(standing).collect();
+            links.push(vec![0; here.len()]);
+            continue;
+        }
+        let rested = notes[index].start - notes[index - 1].end > REST;
+        let scale = if rested { RESTED_MOVE } else { 1.0 };
+        let mut next = Vec::with_capacity(here.len());
+        let mut link = Vec::with_capacity(here.len());
+        for spot in here {
+            let (from, cost) = spots[index - 1]
+                .iter()
+                .zip(&costs)
+                .map(|(before, cost)| {
+                    let hand = spot.0.abs_diff(before.0) as f32 * scale;
+                    cost + hand + spot.1.abs_diff(before.1) as f32 * STRING_CHANGE
+                })
+                .enumerate()
+                .min_by(|a, b| a.1.total_cmp(&b.1))
+                .unwrap_or((0, 0.0));
+            next.push(cost + standing(spot));
+            link.push(from);
+        }
+        costs = next;
+        links.push(link);
+    }
+    let mut at = costs
+        .iter()
+        .enumerate()
+        .min_by(|a, b| a.1.total_cmp(b.1))
+        .map_or(0, |(index, _)| index);
+    let mut line = vec![(0, 0); notes.len()];
+    for index in (0..notes.len()).rev() {
+        let (_, string, fret) = spots[index][at];
+        line[index] = (string, fret);
+        at = links[index][at];
+    }
+    line
+}
+
 fn median(readings: &mut [f32]) -> f32 {
     readings.sort_by(f32::total_cmp);
     readings[readings.len() / 2]
@@ -242,6 +337,7 @@ pub(super) struct Fretboard {
     key_select: Entity<SelectState<Vec<Choice>>>,
     scale_select: Entity<SelectState<Vec<Choice>>>,
     pub(super) hearing: Hearing,
+    pub(super) song: SongPanel,
 }
 
 /// What the fretboard has heard lately.
@@ -306,6 +402,7 @@ impl Fretboard {
             key_select,
             scale_select,
             hearing: Hearing::default(),
+            song: SongPanel::default(),
         };
         (board, subscriptions)
     }
@@ -518,7 +615,9 @@ impl Rig {
         let surface = hsla(0.42, 0.04, 0.11, 1.0);
         let on_root = cx.theme().primary_foreground;
         // Scale notes step back while something is lit, so the played note leads.
-        let quiet = !self.fretboard.hearing.played.is_empty();
+        let song = self.fretboard.song.song();
+        let (song_now, song_next) = song.map_or((None, None), |song| song.now_and_next());
+        let quiet = !self.fretboard.hearing.played.is_empty() || song_now.is_some();
         let tone = hsla(0.42, 0.05, if quiet { 0.2 } else { 0.3 }, 1.0);
         let text = cx.theme().foreground.opacity(if quiet { 0.5 } else { 1.0 });
         let out_of_key = cx.theme().warning;
@@ -615,7 +714,39 @@ impl Rig {
             )
             .shadow(vec![glow(0.8 * fading, 14.0)])
         });
-        let dots: Vec<Div> = dots.into_iter().chain(lit).collect();
+        // The song's next note is an outline, so the eye can get there first.
+        let coming = song_next.map(|note| {
+            marker(
+                note.string,
+                note.fret,
+                self.fret_label(note.midi),
+                surface,
+                moss(),
+                moss(),
+            )
+        });
+        let sounding = song_now.map(|note| {
+            let color = if in_scale(scale, degree(note.midi, key)) {
+                moss()
+            } else {
+                out_of_key
+            };
+            marker(
+                note.string,
+                note.fret,
+                self.fret_label(note.midi),
+                color,
+                color,
+                on_root,
+            )
+            .shadow(vec![glow(0.8, 14.0)])
+        });
+        let dots: Vec<Div> = dots
+            .into_iter()
+            .chain(coming)
+            .chain(sounding)
+            .chain(lit)
+            .collect();
         let numbers: Vec<_> = INLAYS
             .iter()
             .map(|fret| {
@@ -746,6 +877,7 @@ impl Rig {
                     .child(div().text_sm().text_color(fog()).child(spelled)),
             )
             .child(self.render_neck(cx))
+            .child(self.render_song(cx))
             .child(div().text_xs().text_color(fog()).child(
                 "Shows where each note most likely is, from your hand's position and the sound of \
                  the string. Click a fret number to say where your hand is.",
@@ -756,9 +888,55 @@ impl Rig {
 #[cfg(test)]
 mod tests {
     use super::{
-        Hearing, SCALES, STRING_STIFFNESS, degree, fret_share, in_scale, median, midi_note,
-        place_chord, place_note, positions, scale_index,
+        Hearing, SCALES, STRING_STIFFNESS, degree, finger_line, fold_onto_neck, fret_share,
+        in_scale, median, midi_note, place_chord, place_note, positions, scale_index,
     };
+    use amp_dsp::MelodyNote;
+
+    /// A run of notes, a fifth of a second each with no rests.
+    fn line(pitches: &[i32]) -> Vec<MelodyNote> {
+        pitches
+            .iter()
+            .enumerate()
+            .map(|(index, midi)| MelodyNote {
+                start: index as f32 * 0.2,
+                end: (index + 1) as f32 * 0.2,
+                midi: *midi,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_scale_run_stays_in_one_position() {
+        // A minor pentatonic in fifth position, across three strings.
+        let spots = finger_line(&line(&[60, 62, 64, 67, 69, 72, 74]));
+        let frets: Vec<i32> = spots.iter().map(|(_, fret)| *fret).collect();
+        let (low, high) = (frets.iter().min().unwrap(), frets.iter().max().unwrap());
+        assert!(high - low <= 5, "{spots:?}");
+    }
+
+    #[test]
+    fn a_line_looks_ahead_to_where_it_is_going() {
+        // Ending high on the neck pulls the start of the line up to meet it.
+        let spots = finger_line(&line(&[65, 76, 79, 76, 79]));
+        assert!(spots[0].1 >= 5, "{spots:?}");
+    }
+
+    #[test]
+    fn every_note_of_a_line_lands_on_its_own_pitch() {
+        let pitches = [52, 55, 57, 60, 64, 69, 67, 64, 62, 60];
+        for (spot, midi) in finger_line(&line(&pitches)).iter().zip(pitches) {
+            assert_eq!(super::TUNING[spot.0] + spot.1, midi);
+        }
+    }
+
+    #[test]
+    fn notes_past_the_neck_come_back_by_octaves() {
+        assert_eq!(fold_onto_neck(28), 40);
+        assert_eq!(fold_onto_neck(91), 79);
+        assert_eq!(fold_onto_neck(60), 60);
+        assert!(finger_line(&[]).is_empty());
+    }
 
     #[test]
     fn a_pitch_shows_everywhere_it_can_be_fretted() {

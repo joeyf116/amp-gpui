@@ -113,6 +113,22 @@ accounts for, and repeats. Each partial's removal is capped by its neighbours, s
 partial two notes share isn't all taken by the first. `chord_name` matches the result
 against chord shapes, and a chord has to hold for two looks before it shows.
 
+`song.rs` holds a loaded song. `read_song` in `crates/amp-engine/src/song_file.rs`
+decodes the file to mono at the engine rate with Symphonia, and `transcribe` in
+`crates/amp-dsp/src/melody.rs` finds the melody on a background thread. It works at
+12 kHz with a 10 ms hop. Each frame's spectral peaks vote for the pitches they could be
+harmonics of, a Viterbi pass follows the strongest smooth path with a silent state for
+gaps, and the path becomes notes after taking out the recording's own tuning. It's a
+reimplementation of the salience and tracking idea, with no model or extra data.
+`finger_line` then chooses frets by dynamic programming over the whole line, since unlike
+live notes it can see what's coming.
+
+Playback is `SongPlayer` in `crates/amp-dsp/src/song.rs`, mixed in after the Output level
+like the metronome. The track is an `Arc<[f32]>`: the UI keeps a clone to reload a
+restarted engine, and a replaced track goes back through a retired queue so the audio
+thread never frees it. The audio thread publishes its sample position in `Meters`, and
+the tab and neck draw from that, so they follow what's actually playing.
+
 A pitch can't say where it was fretted, so `place_note` scores each place by hand
 distance and by stiffness. Stiffness is the inharmonicity B in
 `partial(n) = n * f0 * sqrt(1 + B * n * n)`, fitted from the exact partial frequencies
