@@ -1,5 +1,5 @@
 ; Builds the Windows installer. CI passes the version and output folder:
-;   iscc /DAppVersion=0.2.0 /O..\dist packaging\amp-gpui.iss
+;   iscc /DAppVersion=0.2.0 /Odist packaging\amp-gpui.iss
 ; Paths are relative to this file. The release binary and license file have to
 ; be built first, as .github/workflows/release.yml does.
 
@@ -27,6 +27,7 @@ ArchitecturesInstallIn64BitMode=x64compatible
 MinVersion=10.0
 OutputBaseFilename=amp-gpui-setup
 LicenseFile=..\LICENSE
+SetupIconFile=..\crates\amp-app\assets\icon.ico
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern

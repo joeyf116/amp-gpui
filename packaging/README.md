@@ -23,8 +23,12 @@ The workflow tests and builds, then publishes a GitHub Release with
 list from GitHub, so it needs no change. A version with a suffix, such as
 `0.2.0-beta.1`, is marked as a prerelease and doesn't become the main download.
 
-To rehearse without publishing, push a branch named `release/<anything>` or run
-the workflow by hand. The installer lands on the run page as an artifact.
+To rehearse without publishing, run the workflow by hand, or push a branch named
+`release/<anything>` that changes `Cargo.lock` or the packaging files. The
+installer lands on the run page as an artifact.
+
+Every build also runs `test-installer.ps1`, which installs, upgrades from an older
+version, starts the app, and uninstalls.
 
 ## ASIO
 

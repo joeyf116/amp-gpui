@@ -746,6 +746,46 @@ def render_logo():
     image.resize((192, 192), Image.LANCZOS).save(GEAR / "logo.png")
 
 
+def icon_size(size):
+    """One size of the app icon: the logo on the app's dark surface, simplified
+    below 48 px, where four thin rings would blur together."""
+    small = size < 48
+    rings = LOGO_RINGS[::2] if small else LOGO_RINGS
+    weight = 2.4 if small else 1.3
+    inset, span, scale = 0.1, 0.8, 8
+    pixels = size * scale
+    image = Image.new("RGBA", (pixels, pixels), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(image)
+    draw.rounded_rectangle((0, 0, pixels - 1, pixels - 1), radius=pixels * 0.2, fill=(15, 17, 16, 255))
+
+    def place(x, y):
+        return ((inset + span * x / 100) * pixels, (inset + span * y / 100) * pixels)
+
+    def stroke(points, color, width):
+        # Round caps on every point keep the curves smooth at this size.
+        draw.line(points, fill=color, width=round(width))
+        for x, y in points:
+            draw.ellipse((x - width / 2, y - width / 2, x + width / 2, y + width / 2), fill=color)
+
+    for index, (radius, wobble, seed, skip) in enumerate(rings):
+        for run in ring_points(radius, wobble, seed, skip):
+            if len(run) < 8:
+                continue
+            width = (3.4 - index * 0.25) * weight * span * pixels / 100
+            stroke([place(x, y) for x, y in run], (127, 214, 160, 255), width)
+    width = 4.2 * weight * span * pixels / 100
+    stroke([place(x, y) for x, y in LOGO_WAVE], (231, 242, 234, 255), width)
+    return image.resize((size, size), Image.LANCZOS)
+
+
+def render_icon():
+    """The Windows icon for the app, installer, and shortcuts."""
+    sizes = [16, 20, 24, 32, 40, 48, 64, 128, 256]
+    images = [icon_size(size) for size in sizes]
+    images[-1].save(GEAR.parent / "icon.ico", sizes=[(size, size) for size in sizes], append_images=images[:-1])
+    return images
+
+
 def main():
     GEAR.mkdir(parents=True, exist_ok=True)
     for name in PEDALS:
@@ -761,6 +801,7 @@ def main():
     print("backdrop and logo")
     render_stage()
     render_logo()
+    render_icon()
 
 
 if __name__ == "__main__":
