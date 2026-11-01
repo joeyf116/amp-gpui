@@ -8,8 +8,10 @@
 
 mod build;
 mod library;
+mod practice;
 mod preset;
 
 pub use build::{BuiltChain, build_chain};
 pub use library::{Library, LibraryError, PresetEntry};
+pub use practice::{PracticeSection, PracticeSheet};
 pub use preset::{AssetKind, AssetRef, BlockPreset, Preset, SCHEMA_VERSION};

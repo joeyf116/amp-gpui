@@ -1,3 +1,5 @@
+mod practice;
+
 use crate::{
     knob::{Knob, accent},
     settings::Settings,
@@ -17,6 +19,7 @@ use gpui_kit::{
     prelude::FluentBuilder,
     *,
 };
+use practice::Practice;
 use std::{path::PathBuf, time::Duration};
 
 const METER_INTERVAL: Duration = Duration::from_millis(50);
@@ -30,6 +33,7 @@ const AMP_QUALITY: usize = 2;
 enum View {
     Amp,
     Rig,
+    Practice,
 }
 
 #[derive(Clone)]
@@ -84,6 +88,7 @@ pub struct Rig {
     preset_name: Entity<InputState>,
     amp_info: Option<AmpInfo>,
     view: View,
+    practice: Practice,
 
     devices: DeviceList,
     input_select: Entity<SelectState<Vec<Choice>>>,
@@ -183,6 +188,7 @@ impl Rig {
             preset_name,
             amp_info: None,
             view: View::Amp,
+            practice: Practice::default(),
             devices,
             input_select,
             channel_select,
@@ -197,6 +203,7 @@ impl Rig {
             _meter_timer: meter_timer,
         };
         rig.refresh_presets();
+        rig.refresh_sheets();
         let last_tone = rig.settings.last_tone.as_deref();
         let last_tone = rig
             .presets
@@ -435,6 +442,7 @@ impl Rig {
                     this.library = library;
                     this.settings.library = Some(path);
                     this.refresh_presets();
+                    this.refresh_sheets();
                     this.save_settings(cx);
                 }
                 Err(error) => this.error = Some(error.to_string().into()),
@@ -911,6 +919,7 @@ impl Render for Rig {
         let body = match self.view {
             View::Amp => self.render_amp_view(cx).into_any_element(),
             View::Rig => self.render_rig_view(cx).into_any_element(),
+            View::Practice => self.render_practice_view(cx).into_any_element(),
         };
         v_flex()
             .size_full()
@@ -945,7 +954,13 @@ impl Render for Rig {
                                 h_flex()
                                     .gap_1()
                                     .child(self.render_tab("tab-amp", "Amp", View::Amp, cx))
-                                    .child(self.render_tab("tab-rig", "Full rig", View::Rig, cx)),
+                                    .child(self.render_tab("tab-rig", "Full rig", View::Rig, cx))
+                                    .child(self.render_tab(
+                                        "tab-practice",
+                                        "Practice",
+                                        View::Practice,
+                                        cx,
+                                    )),
                             )
                             .child(body)
                             .child(

@@ -63,6 +63,13 @@ one preset. Importing a pack re-hashes every file before accepting any of it.
 `.nam` and `.wav` files are ignored by this repo, since captures often have
 their own licenses. Check a capture's terms before sharing it in a pack.
 
+## Practice
+
+The Practice view shows guitar tab split into sections, and each section can
+link a saved tone, so one click loads the right sound for that part. Import a
+plain text file to add a sheet. A line like `[Verse]` starts a new section.
+Sheets are JSON files in the library's `practice` folder.
+
 ## Status
 
 Latency is the main open problem. See the architecture notes for the plan.

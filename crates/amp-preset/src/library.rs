@@ -1,5 +1,6 @@
 use crate::{AssetKind, AssetRef, Preset, SCHEMA_VERSION};
 use amp_dsp::DspError;
+use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::{
     fs, io,
@@ -8,12 +9,13 @@ use std::{
 
 const PRESETS: &str = "presets";
 const ASSETS: &str = "assets";
+pub(crate) const PRACTICE: &str = "practice";
 
 #[derive(Debug, thiserror::Error)]
 pub enum LibraryError {
     #[error(transparent)]
     Io(#[from] io::Error),
-    #[error("{path} is not a valid preset: {source}")]
+    #[error("{path} could not be read: {source}")]
     Json {
         path: PathBuf,
         source: serde_json::Error,
@@ -50,6 +52,7 @@ impl Library {
         let root = root.into();
         fs::create_dir_all(root.join(PRESETS))?;
         fs::create_dir_all(root.join(ASSETS))?;
+        fs::create_dir_all(root.join(PRACTICE))?;
         Ok(Self { root })
     }
 
@@ -82,7 +85,7 @@ impl Library {
     /// preset with the same name.
     pub fn save_preset(&self, preset: &Preset) -> Result<PathBuf, LibraryError> {
         let path = self.preset_path(&preset.name)?;
-        write_preset(&path, preset)?;
+        write_json(&path, preset)?;
         Ok(path)
     }
 
@@ -195,9 +198,9 @@ fn read_preset(path: &Path) -> Result<Preset, LibraryError> {
 }
 
 /// Writes through a temporary file, so a crash mid-save can't leave a library
-/// that syncs half a preset to everyone else.
-fn write_preset(path: &Path, preset: &Preset) -> Result<(), LibraryError> {
-    let json = serde_json::to_string_pretty(preset).map_err(|source| LibraryError::Json {
+/// that syncs half a file to everyone else.
+pub(crate) fn write_json(path: &Path, value: &impl Serialize) -> Result<(), LibraryError> {
+    let json = serde_json::to_string_pretty(value).map_err(|source| LibraryError::Json {
         path: path.to_owned(),
         source,
     })?;
@@ -218,7 +221,7 @@ fn hash_file(path: &Path) -> Result<String, LibraryError> {
         .collect())
 }
 
-fn slug(name: &str) -> Option<String> {
+pub(crate) fn slug(name: &str) -> Option<String> {
     let mut slug = String::new();
     for character in name.to_lowercase().chars() {
         if character.is_alphanumeric() {
