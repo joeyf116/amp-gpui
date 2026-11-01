@@ -1,0 +1,126 @@
+/* The tone generator. Colors come from the theme on the docs site, and from the
+   page's own tokens in the Claude artifact. */
+
+#tone-generator {
+  --gen-text: var(--md-default-fg-color, CanvasText);
+  --gen-muted: var(--md-default-fg-color--light, GrayText);
+  --gen-line: var(--md-default-fg-color--lightest, GrayText);
+  --gen-accent: var(--md-accent-fg-color, #2d7a53);
+  --gen-accent-text: var(--md-accent-bg-color, #f2f7f4);
+  --gen-error: var(--md-code-hl-special-color, #d4574e);
+  color: var(--gen-text);
+  margin-block: 1.5rem;
+}
+
+#tone-generator h3 {
+  margin: 0 0 0.4em;
+}
+
+#tone-generator textarea,
+#tone-generator input,
+#tone-generator select {
+  background: transparent;
+  border: 1px solid var(--gen-line);
+  border-radius: 4px;
+  box-sizing: border-box;
+  color: inherit;
+  font: inherit;
+  padding: 0.5em 0.6em;
+  width: 100%;
+}
+
+#tone-generator select option {
+  color: initial;
+}
+
+#tone-generator :is(textarea, input, select, .gen-button):focus-visible {
+  outline: 2px solid var(--gen-accent);
+  outline-offset: 1px;
+}
+
+.gen-label {
+  display: block;
+  font-weight: 600;
+  margin-block: 0.8em 0.3em;
+}
+
+.gen-ideas,
+.gen-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5em;
+  margin-block: 0.6em;
+}
+
+.gen-button {
+  background: transparent;
+  border: 1px solid var(--gen-line);
+  border-radius: 4px;
+  color: inherit !important;
+  cursor: pointer;
+  display: inline-block;
+  font: inherit;
+  font-size: 0.9em;
+  min-height: 2.4em;
+  padding: 0.4em 0.9em;
+}
+
+.gen-button:hover {
+  border-color: var(--gen-accent);
+}
+
+.gen-button:disabled {
+  cursor: progress;
+  opacity: 0.6;
+}
+
+.gen-primary {
+  background: var(--gen-accent);
+  border-color: var(--gen-accent);
+  color: var(--gen-accent-text) !important;
+  font-weight: 600;
+}
+
+.gen-idea {
+  color: var(--gen-muted) !important;
+  font-size: 0.8em;
+}
+
+.gen-route {
+  border-top: 1px solid var(--gen-line);
+  margin-top: 1.4em;
+  padding-top: 1em;
+}
+
+.gen-status {
+  min-height: 1.5em;
+}
+
+.gen-error {
+  color: var(--gen-error);
+}
+
+.gen-result {
+  border: 1px solid var(--gen-accent);
+  border-radius: 6px;
+  margin-top: 1em;
+  padding: 1em;
+}
+
+.gen-tags,
+.gen-hint {
+  color: var(--gen-muted);
+  font-size: 0.85em;
+}
+
+#tone-generator .gen-chain {
+  list-style: decimal;
+  margin: 1em 0 1em 1.4em;
+  padding: 0;
+}
+
+.gen-chain li span {
+  color: var(--gen-muted);
+  display: block;
+  font-size: 0.85em;
+}

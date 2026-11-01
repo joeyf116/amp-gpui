@@ -1,0 +1,12 @@
+{
+  "name": "amp-gpui-tone-generator",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "bundle": "esbuild sdk-entry.js --bundle --format=esm --minify --target=es2022 --outfile=../../docs/assets/generator/anthropic-sdk.js"
+  },
+  "devDependencies": {
+    "@anthropic-ai/sdk": "1.3.0",
+    "esbuild": "0.28.2"
+  }
+}

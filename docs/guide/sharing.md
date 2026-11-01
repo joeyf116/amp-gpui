@@ -18,6 +18,8 @@ Imported tones play straight away. Their captures don't appear in your gear
 drawer, though, because it only lists captures you've added yourself. Press **Add
 .nam** to add them.
 
+The [tone generator](generate.md) produces this same kind of pack.
+
 ## Share everything: the library folder
 
 Press **Folder** and choose where the library should live. Any folder works,

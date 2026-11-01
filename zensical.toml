@@ -5,7 +5,7 @@ site_url = "https://joeyf116.github.io/amp-gpui/"
 repo_url = "https://github.com/joeyf116/amp-gpui"
 repo_name = "joeyf116/amp-gpui"
 edit_uri = "edit/main/docs/"
-extra_css = ["stylesheets/forest.css"]
+extra_css = ["stylesheets/forest.css", "stylesheets/generator.css"]
 
 nav = [
   { "Home" = "index.md" },
@@ -16,6 +16,7 @@ nav = [
     { "Monitoring and latency" = "guide/monitoring.md" },
     { "Load and save tones" = "guide/tones.md" },
     { "Build a rig" = "guide/board.md" },
+    { "Generate a tone" = "guide/generate.md" },
     { "Share tones" = "guide/sharing.md" },
     { "Practice and tune" = "guide/practice.md" },
     { "Keyboard and mouse" = "guide/controls.md" },

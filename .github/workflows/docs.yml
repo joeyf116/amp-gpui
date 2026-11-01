@@ -8,6 +8,10 @@ on:
       - docs/**
       - zensical.toml
       - .github/workflows/docs.yml
+      - tools/tone-generator/**
+      # The tone generator's catalog is copied from these.
+      - crates/amp-dsp/src/block.rs
+      - crates/amp-preset/src/preset.rs
   workflow_dispatch:
 
 permissions:
@@ -32,6 +36,7 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: 3.x
+      - run: python tools/tone-generator/sync_catalog.py --check
       # Zensical is pre-1.0, so the version moves on purpose, not by surprise.
       - run: pip install zensical==0.0.74
       - run: zensical build --clean --strict

@@ -36,6 +36,8 @@ Tones live in a plain folder that you own and can share however you like.
   unit up close on a stage. Put gear in any order, with undo and redo, and hear
   each edit without a click.
 - **A Tone Explorer** with search, tags, favorites, and recent tones.
+- **A [tone generator](guide/generate.md).** Describe a sound and Claude builds a
+  full signal chain you can import.
 - **14 factory tones** from clean to fuzz, made only from built-in blocks, so
   they play on a fresh install.
 - **Your own tone library.** It's a folder of JSON and files named by content
