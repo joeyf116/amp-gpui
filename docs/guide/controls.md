@@ -24,8 +24,8 @@ pedal.
 | Undo | ++ctrl+z++ |
 | Redo | ++ctrl+y++ or ++ctrl+shift+z++ |
 
-Undo steps back through your last 64 edits on the current tone. One long turn of
-a knob counts as one edit.
+Undo steps back through your last 64 edits, including moves to another tone, so
+unsaved work is never lost. One long turn of a knob counts as one edit.
 
 ## Tone Explorer
 
@@ -45,3 +45,5 @@ a knob counts as one edit.
 | Metronome on or off | ++k++ |
 | Tone Explorer | ++ctrl+o++ |
 | Gear drawer | ++g++ |
+| Tone assistant | ++ctrl+j++ |
+| Flip between old and new while trying a suggestion | ++ctrl+b++ |

@@ -8,10 +8,10 @@ can share it any way you share files. There are two ways to do it.
 A tone pack is a folder with one tone and the files it needs. Files from
 [TONE3000](tone3000.md#sharing-tones-that-use-them) stay out of it.
 
-**To export,** load the tone, press **Export** under the tone list, and choose an
+**To export,** load the tone, choose **Library**, then **Export this tone**, in the Tone Explorer, and choose an
 empty folder. Zip that folder and send it however you like.
 
-**To import,** unzip the pack, press **Import**, and choose its folder. Every file
+**To import,** unzip the pack, choose **Library**, then **Import tones**, and choose its folder. Every file
 is re-hashed before anything is added, so a pack can't swap a file for something
 else. If any file fails, nothing is imported.
 

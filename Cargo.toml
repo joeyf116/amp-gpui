@@ -9,9 +9,11 @@ publish = false
 license = "GPL-3.0-only"
 
 [workspace.dependencies]
+amp-assistant = { path = "crates/amp-assistant" }
 amp-dsp = { path = "crates/amp-dsp" }
 amp-engine = { path = "crates/amp-engine" }
 amp-preset = { path = "crates/amp-preset" }
+amp-secret = { path = "crates/amp-secret" }
 amp-tone3000 = { path = "crates/amp-tone3000" }
 
 base64 = "0.22.1"

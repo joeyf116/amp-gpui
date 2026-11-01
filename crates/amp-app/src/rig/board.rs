@@ -2,7 +2,7 @@
 //! order and takes drags from the gear drawer or along itself, with live
 //! changes on every drop. The stage shows the selected unit up close.
 
-use super::{AMP_QUALITY, FOOTER_HEIGHT, HEADER_HEIGHT, Overlay, Rig};
+use super::{AMP_QUALITY, FOOTER_HEIGHT, HEADER_HEIGHT, Overlay, Rig, assistant_view};
 use crate::{
     art::{self, GearArt, STAGE_HEIGHT, Shape},
     knob::KnobLook,
@@ -660,7 +660,12 @@ impl Rig {
             - STRIP_HEIGHT
             - STAGE_MARGIN;
         let drawer = if self.gear_open { DRAWER_WIDTH } else { 0.0 };
-        let room_wide = f32::from(viewport.width) - DETAILS_WIDTH - drawer - STAGE_MARGIN;
+        let panel = if self.assistant.open {
+            assistant_view::PANEL_WIDTH
+        } else {
+            0.0
+        };
+        let room_wide = f32::from(viewport.width) - DETAILS_WIDTH - drawer - panel - STAGE_MARGIN;
         let (width, height) = shape.stage_size();
         (room_high / height.max(STAGE_HEIGHT * 0.78))
             .min(room_wide / width)

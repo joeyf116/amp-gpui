@@ -1,0 +1,10 @@
+[package]
+name = "amp-secret"
+description = "Small files encrypted to the Windows account"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows.workspace = true

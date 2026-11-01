@@ -1,3 +1,4 @@
+use amp_assistant::ModelChoice;
 use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
 use std::{fs, path::PathBuf};
@@ -48,6 +49,8 @@ pub struct Settings {
     pub fret_intervals: bool,
     /// How stiff each open string of this guitar is, once it has been learned.
     pub string_stiffness: Option<[f32; 6]>,
+    /// Which Claude model the tone assistant uses.
+    pub assistant_model: ModelChoice,
 }
 
 /// A, the key most guitar players reach for first.
@@ -89,6 +92,7 @@ impl Default for Settings {
             scale: String::new(),
             fret_intervals: false,
             string_stiffness: None,
+            assistant_model: ModelChoice::default(),
         }
     }
 }
@@ -109,11 +113,17 @@ impl Settings {
         data_dir().join("settings.json")
     }
 
+    /// Damaged settings are set aside rather than overwritten, so the app still
+    /// starts and the old file can be looked at.
     pub fn load() -> Self {
-        fs::read_to_string(Self::path())
-            .ok()
-            .and_then(|text| serde_json::from_str(&text).ok())
-            .unwrap_or_default()
+        let path = Self::path();
+        let Ok(text) = fs::read_to_string(&path) else {
+            return Self::default();
+        };
+        serde_json::from_str(&text).unwrap_or_else(|_| {
+            let _ = fs::rename(&path, path.with_extension("json.bad"));
+            Self::default()
+        })
     }
 
     pub fn save(&self) -> std::io::Result<()> {
@@ -121,7 +131,10 @@ impl Settings {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
-        fs::write(path, serde_json::to_string_pretty(self)?)
+        // Through a temporary file, so a crash can't leave half of it behind.
+        let temporary = path.with_extension("json.tmp");
+        fs::write(&temporary, serde_json::to_string_pretty(self)?)?;
+        fs::rename(temporary, path)
     }
 
     pub fn library_root(&self) -> PathBuf {

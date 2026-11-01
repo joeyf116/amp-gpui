@@ -14,18 +14,20 @@ Explorer**. It opens ready for typing.
 
 ![The Tone Explorer](../assets/screens/tone-explorer.webp)
 
-- **Find:** type in the search box. It matches names, tags, and notes.
-- **Filter:** the left side has your shelves, such as **Favorites** and **Recent**,
-  and filters for **Character**, **Role**, and **Style**. Tick several in one group to
-  see any of them, and tick across groups to narrow the list. The number beside a
-  filter is how many tones you'd see with it on, and filters with none are dimmed.
-- **See what's applied:** filters stay above the list. Press one to remove it, or
-  **Clear all**.
+- **Find:** type in the search box. It matches names, tags, notes, and the gear in a
+  tone, so the name of a capture finds the tones that use it.
+- **Filter:** the first row of pills picks a shelf, such as **Favorites** or **My
+  tones**. The second picks a gain, from **Clean** to **Fuzz**. **More** shows role and
+  style. Each row picks one thing, a lit pill is on, and pressing it again turns it off.
+  Options with nothing to show stay hidden.
 - **Compare:** click a tone, or press ++up++ and ++down++, to load it while the
   Explorer stays open, so you can try several as you play.
 - **Read about it:** the right side describes the loaded tone and lists its signal
   chain.
 - **Favorites:** press the star on a tone, or the star in the header.
+
+If nothing matches, press **Ask the assistant** to carry your search over to the
+[tone assistant](assistant.md).
 
 Double-click a tone, or press ++esc++, to close.
 
@@ -65,12 +67,14 @@ bottom, and press **Save**. Saving under the name of an existing tone
 replaces it. That's also the way
 to rename a tone or start a variation.
 
+Moving to another tone never loses unsaved edits. Press **Undo** to step back to them.
+
 A name needs at least one letter or number. Two names that differ only in
 punctuation or case, like `Lead #2` and `lead 2`, share one file, so the second
 save replaces the first.
 
 ## Delete a tone
 
-There's no delete button yet. Delete the tone's `.json` file from the library's
-`presets` folder, then restart the app. **Library folder** in the Tone Explorer
-chooses where that folder is. Factory tones you delete stay deleted.
+Load the tone, then press **Delete tone** under its signal chain in the Tone Explorer,
+and confirm. It stays on the rig until you load something else, so **Save** brings it
+back. Factory tones you delete stay deleted.

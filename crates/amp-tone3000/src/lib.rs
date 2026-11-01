@@ -15,7 +15,7 @@ mod types;
 
 pub use client::{Client, Error, List};
 pub use sign_in::{Filter, Picked, SignIn};
-pub use types::{Creator, Model, Page, Tone, User};
+pub use types::{Creator, Label, Model, Page, Tone, User};
 
 /// The site every link and API call goes to.
 pub const WEBSITE: &str = "https://www.tone3000.com";

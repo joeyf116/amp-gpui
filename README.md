@@ -41,6 +41,8 @@ cargo run -p amp-engine --example device_check -- --run --input "Mic 1" --output
 | `amp-engine` | Devices, resampling, clock drift, UI to audio messaging | Audio thread and UI thread |
 | `amp-preset` | Preset format, tone library, tone packs | Background threads |
 | `amp-tone3000` | TONE3000 sign-in, tone lists, downloads | Background threads |
+| `amp-assistant` | The tone assistant: Claude client, tools, chats, taste | Its own thread |
+| `amp-secret` | Small files encrypted to the Windows account | Background threads |
 | `amp-app` | The GPUI interface | UI thread |
 
 ## How the audio path works
@@ -68,6 +70,13 @@ one preset. Importing a pack re-hashes every file before accepting any of it.
 
 `.nam` and `.wav` files are ignored by this repo, since captures often have
 their own licenses. Check a capture's terms before sharing it in a pack.
+
+## Tone assistant
+
+Press **Assistant** (Ctrl+J) to chat with Claude beside the rig, using your own Anthropic
+API key. It builds and changes tones, picks captures from your gear and TONE3000 lists, and
+learns your taste from what you keep and adjust. Nothing changes until you press **Try
+it**. See the [guide](docs/guide/assistant.md).
 
 ## Practice tools
 

@@ -87,6 +87,15 @@ impl Library {
         Ok(path)
     }
 
+    /// Removes the preset called `name`. Its models stay, since other presets
+    /// may share them.
+    pub fn delete_preset(&self, name: &str) -> Result<(), LibraryError> {
+        match fs::remove_file(self.preset_path(name)?) {
+            Err(error) if error.kind() != io::ErrorKind::NotFound => Err(error.into()),
+            _ => Ok(()),
+        }
+    }
+
     fn preset_path(&self, name: &str) -> Result<PathBuf, LibraryError> {
         let slug = slug(name).ok_or(LibraryError::InvalidName)?;
         Ok(self.root.join(PRESETS).join(format!("{slug}.json")))
@@ -285,6 +294,19 @@ mod tests {
         assert!(errors.is_empty());
         let names: Vec<_> = entries.iter().map(|e| e.preset.name.as_str()).collect();
         assert_eq!(names, ["alpha", "Zebra"]);
+    }
+
+    #[test]
+    fn deleting_a_preset_leaves_the_rest_and_tolerates_a_second_try() {
+        let directory = TempDir::new();
+        let library = Library::open(&directory.0).unwrap();
+        library.save_preset(&Preset::starter("Keep")).unwrap();
+        library.save_preset(&Preset::starter("Drop")).unwrap();
+        library.delete_preset("Drop").unwrap();
+        library.delete_preset("Drop").unwrap();
+        let (entries, _) = library.presets().unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].preset.name, "Keep");
     }
 
     #[test]

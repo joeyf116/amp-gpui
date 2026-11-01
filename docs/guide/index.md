@@ -11,6 +11,7 @@ want them.
 After that:
 
 - [Load and save tones](tones.md)
+- [Ask the tone assistant](assistant.md) for a sound
 - [Build a rig](board.md) from pedals, amps, and cabinets
 - [Share tones](sharing.md) with other people
 - [Tune and practice](tools.md) with the tuner, metronome, and fretboard

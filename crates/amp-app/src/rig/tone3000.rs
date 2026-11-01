@@ -4,12 +4,13 @@
 //! before changing what a screen shows. Nothing is downloaded until someone
 //! picks a model, which the terms require.
 
-use super::{Overlay, Rig, board::place_after};
+use super::{Overlay, Rig, board::place_after, close_button};
 use crate::{
     art,
     settings::data_dir,
     style::{fog, hairline, moss, moss_glow, sheet},
 };
+use amp_assistant::{origin_of, tone_block_kind as block_kind};
 use amp_dsp::BlockKind;
 use amp_preset::{AssetKind, AssetRef, BlockPreset, CaptureKind, Library, Preset, ToneOrigin};
 use amp_tone3000::{Client, Error, Filter, List, Model, Picked, Tone, User, WEBSITE};
@@ -84,6 +85,8 @@ pub(super) struct Tone3000 {
     target: Option<usize>,
     /// The model being downloaded.
     busy: Option<u64>,
+    /// Set while the catalog is open for the assistant, with what it's after.
+    picking_for: Option<BlockKind>,
     images: HashMap<String, Arc<Image>>,
     asked: HashSet<String>,
     queue: VecDeque<String>,
@@ -103,23 +106,13 @@ impl Tone3000 {
             detail_loading: None,
             target: None,
             busy: None,
+            picking_for: None,
             images: HashMap::new(),
             asked: HashSet::new(),
             queue: VecDeque::new(),
             workers: 0,
             notice: None,
         }
-    }
-}
-
-/// The block a tone's models run in.
-fn block_kind(tone: &Tone) -> BlockKind {
-    if tone.is_ir() {
-        BlockKind::Cab
-    } else if matches!(tone.gear.as_deref(), Some("pedal" | "outboard")) {
-        BlockKind::Pedal
-    } else {
-        BlockKind::Amp
     }
 }
 
@@ -153,22 +146,6 @@ fn filter_for(block: Option<BlockKind>) -> Filter {
     }
 }
 
-fn origin_of(tone: &Tone, model: &Model) -> ToneOrigin {
-    let creator = tone.creator();
-    ToneOrigin {
-        tone_id: tone.id,
-        model_id: model.id,
-        title: tone.title.clone(),
-        model: model.name.clone(),
-        gear: tone.gear_label().to_owned(),
-        format: tone.format_label().to_owned(),
-        creator: creator.username,
-        creator_avatar: creator.avatar_url,
-        image: tone.image().map(str::to_owned),
-        license: tone.license_label().map(str::to_owned),
-    }
-}
-
 fn shortened(text: &str, limit: usize) -> Option<String> {
     let end = text.char_indices().nth(limit)?.0;
     Some(format!("{}...", text[..end].trim_end()))
@@ -190,12 +167,28 @@ fn fetch_model(
         model.id,
         asset_kind.extension()
     ));
-    client
+    // A download that fails partway must not leave its file behind either.
+    let stored = client
         .download(model, &file)
-        .map_err(|error| error.to_string())?;
-    let stored = store_model(library, &file, kind, asset_kind, origin);
+        .map_err(|error| error.to_string())
+        .and_then(|()| {
+            store_model(library, &file, kind, asset_kind, origin).map_err(|e| e.to_string())
+        });
     let _ = fs::remove_file(&file);
-    stored.map_err(|error| error.to_string())
+    stored
+}
+
+/// Downloads the model a block's credit points at.
+pub(super) fn fetch_for_block(
+    client: &Client,
+    library: &Library,
+    origin: ToneOrigin,
+    kind: BlockKind,
+) -> Result<AssetRef, String> {
+    let model = client
+        .model(origin.model_id)
+        .map_err(|error| error.to_string())?;
+    fetch_model(client, library, &model, kind, origin)
 }
 
 fn store_model(
@@ -253,6 +246,10 @@ impl Rig {
         state.detail_loading = None;
     }
 
+    pub(super) fn tone3000_client(&self) -> Arc<Client> {
+        Arc::clone(&self.tone3000.client)
+    }
+
     /// Opens the panel to add a tone, or to change the tone in block `target`.
     pub(super) fn open_tone3000(&mut self, target: Option<usize>, cx: &mut Context<Self>) {
         self.tone3000.target = target;
@@ -290,13 +287,29 @@ impl Rig {
     /// Opens the catalog in the browser, signing in first if needed. It comes
     /// back with a session, and a tone if one was picked.
     fn open_catalog(&mut self, cx: &mut Context<Self>) {
-        self.cancel_sign_in();
         let block = self
             .tone3000
             .target
             .and_then(|slot| self.preset.blocks.get(slot))
             .map(|block| block.kind);
-        let flow = match self.tone3000.client.start_sign_in(filter_for(block)) {
+        self.open_catalog_filtered(filter_for(block), cx);
+    }
+
+    /// Opens the catalog narrowed to what fits `kind`, for the assistant. The
+    /// splash comes first if nobody has signed in yet.
+    pub(super) fn open_catalog_for(&mut self, kind: BlockKind, cx: &mut Context<Self>) {
+        self.overlay = Overlay::Tone3000;
+        self.tone3000.target = None;
+        self.tone3000.picking_for = Some(kind);
+        if self.tone3000.client.signed_in() {
+            self.open_catalog_filtered(filter_for(Some(kind)), cx);
+        }
+        cx.notify();
+    }
+
+    fn open_catalog_filtered(&mut self, filter: Filter, cx: &mut Context<Self>) {
+        self.cancel_sign_in();
+        let flow = match self.tone3000.client.start_sign_in(filter) {
             Ok(flow) => flow,
             Err(error) => return self.tone3000_failed(error, cx),
         };
@@ -324,11 +337,30 @@ impl Rig {
 
     fn signed_in(&mut self, picked: Picked, cx: &mut Context<Self>) {
         cx.activate(true);
+        self.tone3000.picking_for = None;
+        if self.awaiting_pick() {
+            return self.pick_for_assistant(picked, cx);
+        }
         self.overlay = Overlay::Tone3000;
         self.refresh_tone3000(cx);
         if let Some(tone) = picked.tone_id {
             self.open_tone(tone, self.tone3000.target, cx);
         }
+    }
+
+    fn pick_for_assistant(&mut self, picked: Picked, cx: &mut Context<Self>) {
+        self.overlay = Overlay::None;
+        if let Some(id) = picked.tone_id {
+            self.with_client(
+                cx,
+                move |client| client.tone(id),
+                |this, result, cx| match result {
+                    Ok(tone) => this.tone_picked(&tone, cx),
+                    Err(error) => this.tone3000_failed(error, cx),
+                },
+            );
+        }
+        cx.notify();
     }
 
     fn sign_out(&mut self, cx: &mut Context<Self>) {
@@ -433,7 +465,7 @@ impl Rig {
         }
     }
 
-    fn want_image(&mut self, url: String, cx: &mut Context<Self>) {
+    pub(super) fn want_image(&mut self, url: String, cx: &mut Context<Self>) {
         if self.tone3000.asked.insert(url.clone()) {
             self.tone3000.queue.push_back(url);
             self.pump_images(cx);
@@ -601,12 +633,9 @@ impl Rig {
         cx.spawn_in(window, async move |this, cx| {
             let task = cx.background_executor().spawn(async move {
                 for (slot, origin, kind) in missing {
-                    let model = client
-                        .model(origin.model_id)
-                        .map_err(|error| error.to_string())?;
                     // The file may have changed since the preset was saved, so
                     // the preset takes whatever arrives.
-                    let asset = fetch_model(&client, &library, &model, kind, origin)?;
+                    let asset = fetch_for_block(&client, &library, origin, kind)?;
                     preset.blocks[slot].asset = Some(asset);
                 }
                 Ok::<_, String>(preset)
@@ -633,7 +662,7 @@ impl Rig {
     }
 
     /// The tone's picture, or a blank square until it arrives.
-    fn picture(&self, url: Option<&str>, size: f32) -> Div {
+    pub(super) fn picture(&self, url: Option<&str>, size: f32) -> Div {
         div()
             .size(px(size))
             .flex_shrink_0()
@@ -733,7 +762,12 @@ impl Rig {
                 Button::new("t3k-continue")
                     .primary()
                     .label("Continue")
-                    .on_click(cx.listener(|this, _, _, cx| this.open_catalog(cx))),
+                    .on_click(
+                        cx.listener(|this, _, _, cx| match this.tone3000.picking_for {
+                            Some(kind) => this.open_catalog_for(kind, cx),
+                            None => this.open_catalog(cx),
+                        }),
+                    ),
             )
     }
 
@@ -1127,7 +1161,7 @@ impl Rig {
                             .label("Sign out")
                             .on_click(cx.listener(|this, _, _, cx| this.sign_out(cx))),
                     )
-                    .child(close_button(cx)),
+                    .child(close_button("close-tone3000", cx)),
             )
             .child(self.render_tabs(cx))
             .child(body)
@@ -1156,7 +1190,12 @@ impl Rig {
                     panel.child(self.render_browse(cx))
                 } else {
                     panel
-                        .child(h_flex().justify_end().p_2().child(close_button(cx)))
+                        .child(
+                            h_flex()
+                                .justify_end()
+                                .p_2()
+                                .child(close_button("close-tone3000", cx)),
+                        )
                         .child(div().flex_1().min_h_0().child(self.render_splash(cx)))
                 }
             })
@@ -1191,22 +1230,14 @@ impl Rig {
     }
 }
 
-fn close_button(cx: &mut Context<Rig>) -> impl IntoElement + use<> {
-    Button::new("close-tone3000")
-        .small()
-        .ghost()
-        .label("Close")
-        .on_click(cx.listener(|this, _, window, cx| this.close_overlay(window, cx)))
-}
-
-fn logo(height: f32) -> impl IntoElement {
+pub(super) fn logo(height: f32) -> impl IntoElement {
     img(art::tone3000_logo())
         .h(px(height))
         .w(px(height * LOGO_ASPECT))
         .flex_shrink_0()
 }
 
-fn mark(height: f32) -> Img {
+pub(super) fn mark(height: f32) -> Img {
     img(art::t3k_mark())
         .h(px(height))
         .w(px(height * MARK_ASPECT))

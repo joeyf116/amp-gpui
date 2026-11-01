@@ -43,6 +43,13 @@ pub struct Creator {
     pub avatar_url: Option<String>,
 }
 
+/// A make or tag on a tone.
+#[derive(Clone, Debug, Default, Deserialize)]
+pub struct Label {
+    #[serde(default)]
+    pub name: String,
+}
+
 /// A capture project: one piece of gear, holding one or more models.
 #[derive(Clone, Debug, Deserialize)]
 pub struct Tone {
@@ -68,6 +75,10 @@ pub struct Tone {
     pub a1_models_count: u64,
     #[serde(default)]
     pub a2_models_count: u64,
+    #[serde(default, deserialize_with = "null_as_empty")]
+    pub makes: Vec<Label>,
+    #[serde(default, deserialize_with = "null_as_empty")]
+    pub tags: Vec<Label>,
 }
 
 impl Tone {

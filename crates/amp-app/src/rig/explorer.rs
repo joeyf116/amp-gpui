@@ -1,10 +1,10 @@
-//! The Tone Explorer. Filters on the left, tones in the middle, and the loaded
-//! tone on the right. Filters work like a shop's: several choices within a group
-//! widen the list, a choice in another group narrows it, and what's applied stays
-//! in view above the list. Tones load as they're clicked or arrowed to, so they
+//! The Tone Explorer. Search and two rows of pills on top, tones below, and the
+//! loaded tone on the right. The list is short, so filters stay simple: each row
+//! picks one thing, pressing it again clears it, and a lit pill is all the
+//! explaining a filter needs. Tones load as they're clicked or arrowed to, so they
 //! can be compared by ear with the guitar in hand.
 
-use super::{Overlay, Rig, board::block_art};
+use super::{Overlay, Rig, board::block_art, close_button};
 use crate::{
     art::{self, PRINT_FONT},
     style::{fog, hairline, moss, moss_glow, sheet},
@@ -12,10 +12,11 @@ use crate::{
 use amp_preset::{PresetEntry, factory_tones};
 use gpui_kit::{
     component::{
-        ActiveTheme, Sizable, StyledExt,
+        Sizable, StyledExt,
         button::{Button, ButtonVariants},
         h_flex,
         input::{Input, InputState},
+        menu::{DropdownMenu, PopupMenuItem},
         v_flex,
     },
     prelude::FluentBuilder,
@@ -25,21 +26,27 @@ use std::collections::BTreeSet;
 
 /// How many tones the Recent shelf keeps.
 const RECENT: usize = 12;
-const FILTER_WIDTH: f32 = 200.0;
 const DETAIL_WIDTH: f32 = 280.0;
-const CHARACTER_WIDTH: f32 = 128.0;
-const STYLE_WIDTH: f32 = 170.0;
 const ROW_HEIGHT: f32 = 40.0;
+const PILL_HEIGHT: f32 = 26.0;
+const SHELVES: [(&str, Shelf); 4] = [
+    ("All", Shelf::All),
+    ("Favorites", Shelf::Favorites),
+    ("Recent", Shelf::Recent),
+    ("My tones", Shelf::Mine),
+];
 /// Tags that say how much gain a tone has, from least to most.
 const CHARACTER: [&str; 5] = ["clean", "edge of breakup", "crunch", "high gain", "fuzz"];
 const ROLE: [&str; 2] = ["rhythm", "lead"];
+
+/// Something the Library menu can run.
+type LibraryAction = fn(&mut Rig, &mut Window, &mut Context<Rig>);
 
 #[derive(Clone, Debug, PartialEq)]
 enum Shelf {
     All,
     Favorites,
     Recent,
-    Factory,
     Mine,
 }
 
@@ -67,6 +74,10 @@ pub(super) struct Explorer {
     pub(super) search: Entity<InputState>,
     shelf: Shelf,
     chosen: BTreeSet<String>,
+    /// Whether the role and style pills are showing.
+    more: bool,
+    /// The tone waiting for a second press to delete it.
+    deleting: Option<String>,
     factory: Vec<String>,
 }
 
@@ -76,6 +87,8 @@ impl Explorer {
             search: cx.new(|cx| InputState::new(window, cx).placeholder("Search tones")),
             shelf: Shelf::All,
             chosen: BTreeSet::new(),
+            more: false,
+            deleting: None,
             factory: factory_tones().into_iter().map(|tone| tone.name).collect(),
         }
     }
@@ -94,26 +107,46 @@ fn on_shelf(entry: &PresetEntry, shelf: &Shelf, lists: &Lists) -> bool {
         Shelf::All => true,
         Shelf::Favorites => lists.favorites.contains(name),
         Shelf::Recent => lists.recent.contains(name),
-        Shelf::Factory => lists.factory.contains(name),
         Shelf::Mine => !lists.factory.contains(name),
     }
 }
 
-/// Any tag within a group will do, and every group with a choice has to match.
-fn matches_tags(entry: &PresetEntry, chosen: &BTreeSet<String>) -> bool {
-    [Group::Character, Group::Role, Group::Style]
-        .iter()
-        .all(|group| {
-            let mut wanted = chosen.iter().filter(|tag| group_of(tag) == *group);
-            let open = wanted.clone().next().is_none();
-            open || wanted.any(|tag| entry.preset.tags.contains(tag))
-        })
+/// Picks `tag`, which takes over from anything else in its group. Picking it
+/// again clears it.
+fn choose(chosen: &mut BTreeSet<String>, tag: &str) {
+    let was_chosen = chosen.contains(tag);
+    let group = group_of(tag);
+    chosen.retain(|other| group_of(other) != group);
+    if !was_chosen {
+        chosen.insert(tag.to_owned());
+    }
 }
 
-/// Every word of the search has to appear in the name, tags, or notes.
+/// A tone has to carry everything that's picked.
+fn matches_tags(entry: &PresetEntry, chosen: &BTreeSet<String>) -> bool {
+    chosen.iter().all(|tag| entry.preset.tags.contains(tag))
+}
+
+/// Every word of the search has to appear in the name, tags, notes, or gear, so
+/// a capture's name finds the tones that use it.
 fn matches_search(entry: &PresetEntry, search: &str) -> bool {
     let preset = &entry.preset;
-    let text = format!("{} {} {}", preset.name, preset.tags.join(" "), preset.notes).to_lowercase();
+    let gear = preset.blocks.iter().map(|block| {
+        block
+            .origin
+            .as_ref()
+            .map(|origin| origin.title.as_str())
+            .or(block.asset.as_ref().map(|asset| asset.name.as_str()))
+            .unwrap_or(block.kind.title())
+    });
+    let gear = gear.collect::<Vec<_>>().join(" ");
+    let text = format!(
+        "{} {} {} {gear}",
+        preset.name,
+        preset.tags.join(" "),
+        preset.notes
+    )
+    .to_lowercase();
     search
         .to_lowercase()
         .split_whitespace()
@@ -155,17 +188,12 @@ fn remember_recent(recent: &mut Vec<String>, name: &str) {
     recent.truncate(RECENT);
 }
 
-/// A tone's character, or a dash for a tone that has none.
-fn character_of(tags: &[String]) -> String {
-    tags.iter()
-        .find(|tag| group_of(tag) == Group::Character)
-        .map_or_else(|| "\u{2013}".to_owned(), |tag| sentence_case(tag))
-}
-
-/// A tone's style and role, for the list.
-fn style_of(tags: &[String]) -> String {
-    tags.iter()
-        .filter(|tag| group_of(tag) != Group::Character)
+/// A tone's tags for the list, gain first, since that's what people scan for.
+fn tag_line(tags: &[String]) -> String {
+    let in_group = |group| tags.iter().filter(move |tag| group_of(tag) == group);
+    in_group(Group::Character)
+        .chain(in_group(Group::Role))
+        .chain(in_group(Group::Style))
         .map(|tag| sentence_case(tag))
         .collect::<Vec<_>>()
         .join(", ")
@@ -256,10 +284,43 @@ impl Rig {
     }
 
     fn toggle_tag(&mut self, tag: &str, cx: &mut Context<Self>) {
-        if !self.explorer.chosen.remove(tag) {
-            self.explorer.chosen.insert(tag.to_owned());
-        }
+        choose(&mut self.explorer.chosen, tag);
         cx.notify();
+    }
+
+    /// The tags in `group` a press would leave tones for, in the order to show
+    /// them: gain runs low to high, as players think of it. What's picked always
+    /// stays, so it can be cleared.
+    fn pill_tags(&self, group: Group, search: &str) -> Vec<String> {
+        let known: BTreeSet<&String> = self
+            .presets
+            .iter()
+            .flat_map(|entry| &entry.preset.tags)
+            .filter(|tag| group_of(tag) == group)
+            .collect();
+        let ordered: Vec<String> = match group {
+            Group::Character => CHARACTER.map(str::to_owned).into(),
+            Group::Role => ROLE.map(str::to_owned).into(),
+            Group::Style => known.iter().map(|tag| (*tag).clone()).collect(),
+        };
+        ordered
+            .into_iter()
+            .filter(|tag| known.contains(tag))
+            .filter(|tag| {
+                let chosen = &self.explorer.chosen;
+                let mut with_tag = chosen.clone();
+                choose(&mut with_tag, tag);
+                chosen.contains(tag)
+                    || !visible(
+                        &self.presets,
+                        &self.explorer.shelf,
+                        &with_tag,
+                        search,
+                        &self.lists(),
+                    )
+                    .is_empty()
+            })
+            .collect()
     }
 
     fn render_shelf(
@@ -269,161 +330,102 @@ impl Rig {
         shelf: Shelf,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        let count = self
-            .presets
-            .iter()
-            .filter(|entry| on_shelf(entry, &shelf, &self.lists()))
-            .count();
-        let current = self.explorer.shelf == shelf;
-        h_flex()
-            .id(("shelf", id))
-            .justify_between()
-            .items_center()
-            .px_2()
-            .h(px(30.))
-            .rounded_md()
-            .text_sm()
-            .cursor_pointer()
-            .when(current, |row| {
-                row.bg(moss_glow(0.14)).text_color(moss()).font_semibold()
-            })
-            .when(!current, |row| row.hover(|row| row.bg(moss_glow(0.06))))
-            .child(title)
-            .child(div().text_xs().text_color(fog()).child(count.to_string()))
-            .on_click(cx.listener(move |this, _, _, cx| {
+        pill(("shelf", id), title, self.explorer.shelf == shelf).on_click(cx.listener(
+            move |this, _, _, cx| {
                 this.explorer.shelf = shelf.clone();
                 cx.notify();
-            }))
+            },
+        ))
     }
 
-    /// A tag filter. Its count is how many tones a press would leave showing.
-    fn render_tag(
-        &self,
-        id: usize,
-        tag: String,
-        search: &str,
-        cx: &mut Context<Self>,
-    ) -> impl IntoElement {
+    fn render_tag(&self, id: usize, tag: String, cx: &mut Context<Self>) -> impl IntoElement {
         let chosen = self.explorer.chosen.contains(&tag);
-        let mut with_tag = self.explorer.chosen.clone();
-        with_tag.insert(tag.clone());
-        let count = visible(
-            &self.presets,
-            &self.explorer.shelf,
-            &with_tag,
-            search,
-            &self.lists(),
-        )
-        .len();
-        let empty = count == 0 && !chosen;
-        h_flex()
-            .id(("tag", id))
+        pill(("tag", id), sentence_case(&tag), chosen)
+            .on_click(cx.listener(move |this, _, _, cx| this.toggle_tag(&tag, cx)))
+    }
+
+    fn render_tag_row(
+        &self,
+        first_id: usize,
+        tags: Vec<String>,
+        cx: &mut Context<Self>,
+    ) -> Vec<AnyElement> {
+        tags.into_iter()
+            .enumerate()
+            .map(|(id, tag)| self.render_tag(first_id + id, tag, cx).into_any_element())
+            .collect()
+    }
+
+    /// The shelves, gain, and behind More, the rarer filters.
+    fn render_filters(&self, count: usize, cx: &mut Context<Self>) -> impl IntoElement {
+        let search = self.search_text(cx);
+        let shelves: Vec<AnyElement> = SHELVES
+            .into_iter()
+            .enumerate()
+            .map(|(id, (title, shelf))| self.render_shelf(id, title, shelf, cx).into_any_element())
+            .collect();
+        let gain = self.pill_tags(Group::Character, &search);
+        let role = self.pill_tags(Group::Role, &search);
+        let style = self.pill_tags(Group::Style, &search);
+        let has_more = !role.is_empty() || !style.is_empty();
+        let rare_chosen = self
+            .explorer
+            .chosen
+            .iter()
+            .any(|tag| group_of(tag) != Group::Character);
+        let show_more = self.explorer.more || rare_chosen;
+        let filtered = !self.explorer.chosen.is_empty();
+        let gain_pills = self.render_tag_row(0, gain, cx);
+        let mut rare_pills = self.render_tag_row(CHARACTER.len(), role, cx);
+        rare_pills.extend(self.render_tag_row(CHARACTER.len() + ROLE.len(), style, cx));
+        v_flex()
+            .flex_shrink_0()
             .gap_2()
-            .items_center()
-            .px_2()
-            .h(px(28.))
-            .rounded_md()
-            .text_sm()
-            .when(empty, |row| row.opacity(0.4))
-            .when(!empty, |row| {
-                row.cursor_pointer().hover(|row| row.bg(moss_glow(0.06)))
-            })
+            .px_3()
+            .py_2()
             .child(
-                div()
-                    .size(px(14.))
-                    .flex()
+                h_flex()
+                    .gap_1()
                     .items_center()
-                    .justify_center()
-                    .rounded_sm()
-                    .border_1()
-                    .border_color(if chosen { moss() } else { fog() })
-                    .when(chosen, |check| {
-                        check
-                            .bg(moss())
-                            .text_size(px(10.))
-                            .text_color(cx.theme().primary_foreground)
-                            .child("\u{2713}")
+                    .children(shelves)
+                    .child(div().flex_1())
+                    .child(div().text_sm().text_color(fog()).child(if count == 1 {
+                        "1 tone".to_owned()
+                    } else {
+                        format!("{count} tones")
+                    })),
+            )
+            .child(
+                h_flex()
+                    .gap_1()
+                    .items_center()
+                    .flex_wrap()
+                    .children(gain_pills)
+                    .when(has_more, |row| {
+                        row.child(
+                            pill("more-filters", "More", show_more).on_click(cx.listener(
+                                |this, _, _, cx| {
+                                    this.explorer.more = !this.explorer.more;
+                                    cx.notify();
+                                },
+                            )),
+                        )
+                    })
+                    .when(filtered, |row| {
+                        row.child(
+                            Button::new("clear-filters")
+                                .small()
+                                .ghost()
+                                .label("Clear")
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.explorer.chosen.clear();
+                                    cx.notify();
+                                })),
+                        )
                     }),
             )
-            .child(div().flex_1().truncate().child(sentence_case(&tag)))
-            .child(div().text_xs().text_color(fog()).child(count.to_string()))
-            .when(!empty, |row| {
-                row.on_click(cx.listener(move |this, _, _, cx| this.toggle_tag(&tag, cx)))
-            })
-    }
-
-    fn render_filters(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let search = self.search_text(cx);
-        let tags: BTreeSet<String> = self
-            .presets
-            .iter()
-            .flat_map(|entry| entry.preset.tags.iter().cloned())
-            .collect();
-        let heading = |title: &'static str| {
-            div()
-                .mt_4()
-                .mb_1()
-                .px_2()
-                .text_xs()
-                .font_semibold()
-                .text_color(fog())
-                .child(title)
-        };
-        let shelves: Vec<AnyElement> = [
-            ("All tones", Shelf::All),
-            ("Favorites", Shelf::Favorites),
-            ("Recent", Shelf::Recent),
-            ("My tones", Shelf::Mine),
-            ("Factory", Shelf::Factory),
-        ]
-        .into_iter()
-        .enumerate()
-        .map(|(id, (title, shelf))| self.render_shelf(id, title, shelf, cx).into_any_element())
-        .collect();
-        // Gain runs low to high, as players think of it, and styles are alphabetical.
-        let ordered: Vec<String> = CHARACTER
-            .iter()
-            .chain(ROLE.iter())
-            .filter(|tag| tags.contains(**tag))
-            .map(|tag| (*tag).to_owned())
-            .chain(
-                tags.iter()
-                    .filter(|tag| group_of(tag) == Group::Style)
-                    .cloned(),
-            )
-            .collect();
-        let group_rows = |group: Group, cx: &mut Context<Self>| -> Vec<AnyElement> {
-            ordered
-                .iter()
-                .enumerate()
-                .filter(|(_, tag)| group_of(tag) == group)
-                .map(|(id, tag)| {
-                    self.render_tag(id, tag.clone(), &search, cx)
-                        .into_any_element()
-                })
-                .collect()
-        };
-        let character = group_rows(Group::Character, cx);
-        let role = group_rows(Group::Role, cx);
-        let style = group_rows(Group::Style, cx);
-        v_flex()
-            .id("filters")
-            .w(px(FILTER_WIDTH))
-            .h_full()
-            .flex_shrink_0()
-            .overflow_y_scroll()
-            .p_2()
-            .border_r_1()
-            .border_color(hairline())
-            .children(shelves)
-            .when(!character.is_empty(), |column| {
-                column.child(heading("Character")).children(character)
-            })
-            .when(!role.is_empty(), |column| {
-                column.child(heading("Role")).children(role)
-            })
-            .when(!style.is_empty(), |column| {
-                column.child(heading("Style")).children(style)
+            .when(show_more && !rare_pills.is_empty(), |column| {
+                column.child(h_flex().gap_1().flex_wrap().children(rare_pills))
             })
     }
 
@@ -465,29 +467,20 @@ impl Rig {
             )
             .child(
                 div()
-                    .flex_1()
-                    .min_w_0()
-                    .truncate()
+                    .flex_shrink_0()
                     .font_semibold()
                     .when(current, |name| name.text_color(moss()))
                     .child(preset.name.clone()),
             )
             .child(
                 div()
-                    .w(px(CHARACTER_WIDTH))
-                    .flex_shrink_0()
+                    .flex_1()
+                    .min_w_0()
                     .text_sm()
-                    .truncate()
-                    .child(character_of(&preset.tags)),
-            )
-            .child(
-                div()
-                    .w(px(STYLE_WIDTH))
-                    .flex_shrink_0()
-                    .text_sm()
+                    .text_right()
                     .truncate()
                     .text_color(fog())
-                    .child(style_of(&preset.tags)),
+                    .child(tag_line(&preset.tags)),
             )
             .on_click(cx.listener(move |this, event: &ClickEvent, window, cx| {
                 if event.click_count() >= 2 {
@@ -498,58 +491,6 @@ impl Rig {
             }))
     }
 
-    /// What's applied, each removable, so the list explains itself.
-    fn render_applied(&self, count: usize, cx: &mut Context<Self>) -> impl IntoElement {
-        let chips: Vec<_> = self
-            .explorer
-            .chosen
-            .iter()
-            .cloned()
-            .enumerate()
-            .map(|(id, tag)| {
-                h_flex()
-                    .id(("applied", id))
-                    .gap_1()
-                    .items_center()
-                    .px_2()
-                    .h(px(24.))
-                    .rounded_md()
-                    .bg(moss_glow(0.14))
-                    .text_xs()
-                    .cursor_pointer()
-                    .child(sentence_case(&tag))
-                    .child(div().text_color(fog()).child("\u{00D7}"))
-                    .on_click(cx.listener(move |this, _, _, cx| this.toggle_tag(&tag, cx)))
-            })
-            .collect();
-        let filtered = !self.explorer.chosen.is_empty();
-        h_flex()
-            .flex_shrink_0()
-            .flex_wrap()
-            .gap_2()
-            .items_center()
-            .px_3()
-            .min_h(px(36.))
-            .child(div().text_sm().text_color(fog()).child(if count == 1 {
-                "1 tone".to_owned()
-            } else {
-                format!("{count} tones")
-            }))
-            .children(chips)
-            .when(filtered, |row| {
-                row.child(
-                    Button::new("clear-filters")
-                        .small()
-                        .ghost()
-                        .label("Clear all")
-                        .on_click(cx.listener(|this, _, _, cx| {
-                            this.explorer.chosen.clear();
-                            cx.notify();
-                        })),
-                )
-            })
-    }
-
     fn render_tone_list(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let tones = self.visible_tones(cx);
         let count = tones.len();
@@ -557,8 +498,6 @@ impl Rig {
             .iter()
             .map(|index| self.render_tone_row(*index, cx).into_any_element())
             .collect();
-        let column =
-            |title: &'static str, width: f32| div().w(px(width)).flex_shrink_0().child(title);
         v_flex()
             .flex_1()
             .min_w_0()
@@ -570,23 +509,7 @@ impl Rig {
                     .pt_3()
                     .child(Input::new(&self.explorer.search)),
             )
-            .child(self.render_applied(count, cx))
-            .child(
-                h_flex()
-                    .flex_shrink_0()
-                    .gap_2()
-                    .pl(px(33.))
-                    .pr_6()
-                    .pb_1()
-                    .border_b_1()
-                    .border_color(hairline())
-                    .text_xs()
-                    .font_semibold()
-                    .text_color(fog())
-                    .child(div().flex_1().child("Tone"))
-                    .child(column("Character", CHARACTER_WIDTH))
-                    .child(column("Style and role", STYLE_WIDTH)),
-            )
+            .child(self.render_filters(count, cx))
             .child(
                 v_flex()
                     .id("tone-list")
@@ -594,12 +517,27 @@ impl Rig {
                     .min_h_0()
                     .overflow_y_scroll()
                     .px_3()
+                    .pb_2()
                     .when(rows.is_empty(), |list| {
                         list.child(
-                            div()
+                            v_flex()
+                                .gap_2()
+                                .items_start()
                                 .p_4()
-                                .text_color(fog())
-                                .child("No tones match. Try removing a filter."),
+                                .child(
+                                    div()
+                                        .text_color(fog())
+                                        .child("No tones match. Try clearing a filter."),
+                                )
+                                .child(
+                                    Button::new("ask-assistant")
+                                        .small()
+                                        .outline()
+                                        .label("Ask the assistant")
+                                        .on_click(cx.listener(|this, _, window, cx| {
+                                            this.ask_about_search(window, cx);
+                                        })),
+                                ),
                         )
                     })
                     .children(rows),
@@ -608,8 +546,13 @@ impl Rig {
 
     /// The loaded tone, in full. Its picture comes from the tone when it has
     /// one, and from its amp when it doesn't.
-    fn render_tone_detail(&self) -> impl IntoElement {
+    fn render_tone_detail(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let preset = &self.preset;
+        let saved = self
+            .presets
+            .iter()
+            .any(|entry| entry.preset.name == preset.name);
+        let deleting = self.explorer.deleting.as_deref() == Some(preset.name.as_str());
         let picture = preset
             .blocks
             .iter()
@@ -705,9 +648,75 @@ impl Rig {
                     )
                     .children(chain),
             )
+            .when(saved && !deleting, |column| {
+                column.child(
+                    Button::new("delete-tone")
+                        .small()
+                        .ghost()
+                        .label("Delete tone")
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.explorer.deleting = Some(this.preset.name.clone());
+                            cx.notify();
+                        })),
+                )
+            })
+            .when(saved && deleting, |column| {
+                column.child(
+                    h_flex()
+                        .gap_1()
+                        .child(
+                            Button::new("confirm-delete")
+                                .small()
+                                .danger()
+                                .label("Delete it")
+                                .on_click(cx.listener(|this, _, _, cx| this.delete_tone(cx))),
+                        )
+                        .child(
+                            Button::new("cancel-delete")
+                                .small()
+                                .ghost()
+                                .label("Keep it")
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.explorer.deleting = None;
+                                    cx.notify();
+                                })),
+                        ),
+                )
+            })
+    }
+
+    /// Carries what was searched for over to the assistant, ready to send.
+    fn ask_about_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let search = self.search_text(cx);
+        self.close_overlay(window, cx);
+        if !self.assistant.open {
+            self.toggle_assistant(window, cx);
+        }
+        if !search.is_empty() {
+            self.assistant.input.update(cx, |input, cx| {
+                input.set_value(format!("Make me a tone like: {search}"), window, cx);
+            });
+        }
+    }
+
+    /// Takes the loaded tone out of the library. It stays on the rig, marked as
+    /// unsaved, so a mistake is one Save away from undone.
+    fn delete_tone(&mut self, cx: &mut Context<Self>) {
+        let name = self.preset.name.clone();
+        self.explorer.deleting = None;
+        if let Err(error) = self.library.delete_preset(&name) {
+            return self.set_error(error, cx);
+        }
+        self.settings.favorites.retain(|tone| *tone != name);
+        self.settings.recent.retain(|tone| *tone != name);
+        self.saved_blocks.clear();
+        self.save_settings(cx);
+        self.refresh_presets();
+        cx.notify();
     }
 
     fn render_explorer_footer(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let rig = cx.weak_entity();
         h_flex()
             .flex_shrink_0()
             .gap_2()
@@ -731,31 +740,21 @@ impl Rig {
             )
             .child(div().flex_1())
             .child(
-                Button::new("export")
+                Button::new("library-menu")
                     .small()
                     .ghost()
-                    .label("Export")
-                    .on_click(cx.listener(|this, _, window, cx| {
-                        this.export_pack(window, cx);
-                    })),
-            )
-            .child(
-                Button::new("import")
-                    .small()
-                    .ghost()
-                    .label("Import")
-                    .on_click(cx.listener(|this, _, window, cx| {
-                        this.import_pack(window, cx);
-                    })),
-            )
-            .child(
-                Button::new("folder")
-                    .small()
-                    .ghost()
-                    .label("Library folder")
-                    .on_click(cx.listener(|this, _, window, cx| {
-                        this.choose_library(window, cx);
-                    })),
+                    .label("Library")
+                    .dropdown_menu_with_anchor(Anchor::BottomRight, move |menu, _, _| {
+                        let item = |label: &'static str, run: LibraryAction| {
+                            let rig = rig.clone();
+                            PopupMenuItem::new(label).on_click(move |_, window, cx| {
+                                let _ = rig.update(cx, |this, cx| run(this, window, cx));
+                            })
+                        };
+                        menu.item(item("Export this tone", Rig::export_pack))
+                            .item(item("Import tones", Rig::import_pack))
+                            .item(item("Change library folder", Rig::choose_library))
+                    }),
             )
     }
 
@@ -782,34 +781,48 @@ impl Rig {
                     .border_b_1()
                     .border_color(hairline())
                     .child(div().font_semibold().child("Tone Explorer"))
-                    .child(
-                        Button::new("close-explorer")
-                            .small()
-                            .ghost()
-                            .label("Close")
-                            .on_click(cx.listener(|this, _, window, cx| {
-                                this.close_overlay(window, cx);
-                            })),
-                    ),
+                    .child(close_button("close-explorer", cx)),
             )
             .child(
                 h_flex()
                     .flex_1()
                     .min_h_0()
                     .items_start()
-                    .child(self.render_filters(cx))
                     .child(self.render_tone_list(cx))
-                    .child(self.render_tone_detail()),
+                    .child(self.render_tone_detail(cx)),
             )
             .child(self.render_explorer_footer(cx))
     }
 }
 
+/// A filter you can see the state of. It's lit while applied.
+fn pill(id: impl Into<ElementId>, title: impl Into<SharedString>, lit: bool) -> Stateful<Div> {
+    div()
+        .id(id)
+        .flex()
+        .items_center()
+        .flex_shrink_0()
+        .h(px(PILL_HEIGHT))
+        .px_3()
+        .rounded_full()
+        .border_1()
+        .text_sm()
+        .cursor_pointer()
+        .when(lit, |pill| {
+            pill.bg(moss_glow(0.16))
+                .border_color(moss())
+                .text_color(moss())
+        })
+        .when(!lit, |pill| {
+            pill.border_color(hairline())
+                .hover(|pill| pill.bg(moss_glow(0.06)))
+        })
+        .child(title.into())
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{
-        Lists, RECENT, Shelf, character_of, remember_recent, sentence_case, style_of, visible,
-    };
+    use super::{Lists, RECENT, Shelf, choose, remember_recent, sentence_case, tag_line, visible};
     use amp_preset::{Preset, PresetEntry};
     use std::{collections::BTreeSet, path::PathBuf};
 
@@ -855,7 +868,6 @@ mod tests {
         let show = |shelf, search| visible(&entries, &shelf, &none, search, &lists);
         assert_eq!(show(Shelf::All, ""), [0, 1, 2, 3]);
         assert_eq!(show(Shelf::Favorites, ""), [1]);
-        assert_eq!(show(Shelf::Factory, ""), [0, 1]);
         assert_eq!(show(Shelf::Mine, ""), [2, 3]);
         assert_eq!(show(Shelf::Recent, ""), [3, 0]);
         assert_eq!(show(Shelf::All, "GAIN tight"), [1]);
@@ -863,7 +875,7 @@ mod tests {
     }
 
     #[test]
-    fn choices_in_a_group_widen_and_groups_narrow() {
+    fn picks_replace_within_a_group_and_narrow_across_groups() {
         let entries = tones();
         let lists = Lists {
             favorites: &[],
@@ -872,17 +884,38 @@ mod tests {
         };
         let show = |chosen: &[&str]| visible(&entries, &Shelf::All, &tags(chosen), "", &lists);
         assert_eq!(show(&["clean"]), [0, 3]);
-        assert_eq!(show(&["clean", "high gain"]), [0, 1, 2, 3]);
         assert_eq!(show(&["high gain", "lead"]), [2]);
         assert_eq!(show(&["clean", "blues"]), [3]);
+
+        let mut chosen = tags(&["clean", "lead"]);
+        choose(&mut chosen, "crunch");
+        assert_eq!(chosen, tags(&["crunch", "lead"]));
+        choose(&mut chosen, "crunch");
+        assert_eq!(chosen, tags(&["lead"]));
     }
 
     #[test]
-    fn tags_are_sorted_into_columns() {
-        let tags = names(&["neo-soul", "clean", "rhythm"]);
-        assert_eq!(character_of(&tags), "Clean");
-        assert_eq!(style_of(&tags), "Neo-soul, Rhythm");
-        assert_eq!(character_of(&[]), "\u{2013}");
+    fn search_finds_a_tone_by_the_gear_on_it() {
+        let mut plexi = entry("Saturday", &[], "");
+        plexi.preset.blocks[2].origin = Some(amp_preset::ToneOrigin {
+            title: "Plexi 1959".into(),
+            ..amp_preset::ToneOrigin::default()
+        });
+        let entries = [entry("Moss", &[], ""), plexi];
+        let lists = Lists {
+            favorites: &[],
+            recent: &[],
+            factory: &[],
+        };
+        let none = BTreeSet::new();
+        assert_eq!(visible(&entries, &Shelf::All, &none, "plexi", &lists), [1]);
+    }
+
+    #[test]
+    fn tags_read_gain_first() {
+        let tags = names(&["neo-soul", "rhythm", "clean"]);
+        assert_eq!(tag_line(&tags), "Clean, Rhythm, Neo-soul");
+        assert_eq!(tag_line(&[]), "");
         assert_eq!(sentence_case("edge of breakup"), "Edge of breakup");
     }
 

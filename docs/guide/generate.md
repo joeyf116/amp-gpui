@@ -4,6 +4,9 @@ Describe a sound and Claude builds a full signal chain for it: gate, drive, amp,
 cabinet, and effects, with every control set. You download it as a tone pack and
 import it into Amp GPUI.
 
+Inside the app, the [tone assistant](assistant.md) does this and more. This page is
+for trying it without an API key in the app.
+
 <div id="tone-generator" markdown="0">
   <p>The tone generator needs JavaScript.</p>
 </div>
@@ -15,7 +18,7 @@ import it into Amp GPUI.
 ## Add it to the app
 
 1. Unzip the tone pack.
-2. In Amp GPUI, press **Import** under the tone list.
+2. In Amp GPUI, open the Tone Explorer and choose **Library**, then **Import tones**.
 3. Choose the unzipped folder. The tone appears in the Tone Explorer.
 
 !!! warning "Start with your volume low"

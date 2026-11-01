@@ -1,19 +1,25 @@
+mod assistant;
+mod assistant_view;
 mod audio;
 mod board;
 mod explorer;
 mod fretboard;
 mod header;
+mod keys;
 mod tone3000;
+mod tones;
 mod tools;
 
-use crate::{knob::Knob, settings::Settings};
-use amp_dsp::{AmpInfo, BlockKind, ParamSpec, Pitch};
-use amp_engine::{
-    Command, DeviceList, DeviceOption, ENGINE_RATE, Engine, EngineConfig, Latency, LatencyMode,
+use crate::{
+    knob::Knob,
+    settings::{Settings, data_dir},
+    style,
 };
-use amp_preset::{
-    AssetKind, BlockPreset, CaptureEntry, Library, LibraryError, Preset, PresetEntry, build_chain,
-};
+use amp_dsp::{AmpInfo, ParamSpec, Pitch};
+use amp_engine::{Command, DeviceList, DeviceOption, ENGINE_RATE, Engine, Latency};
+use amp_preset::{BlockPreset, CaptureEntry, Library, Preset, PresetEntry};
+use assistant::Assistant;
+use audio::{Choice, channel_choices, device_choices, driver_choices, position};
 use explorer::Explorer;
 use fretboard::Fretboard;
 use gpui_kit::{
@@ -22,16 +28,15 @@ use gpui_kit::{
         button::{Button, ButtonVariants},
         h_flex,
         input::InputState,
-        select::{SelectEvent, SelectItem, SelectState},
+        select::{SelectEvent, SelectState},
         v_flex,
     },
     prelude::FluentBuilder,
     *,
 };
-use std::{
-    path::PathBuf,
-    time::{Duration, Instant},
-};
+pub use keys::bind_keys;
+use keys::*;
+use std::time::{Duration, Instant};
 use tone3000::Tone3000;
 
 const METER_INTERVAL: Duration = Duration::from_millis(50);
@@ -60,72 +65,10 @@ const KNOB_OUTPUT: ParamSpec = ParamSpec {
     default: 0.0,
 };
 
-actions!(
-    rig,
-    [
-        Undo,
-        Redo,
-        RemoveUnit,
-        BypassUnit,
-        OpenUnit,
-        CloseUnit,
-        PreviousUnit,
-        NextUnit,
-        MoveUnitLeft,
-        MoveUnitRight,
-        PreviousTone,
-        NextTone,
-        ToggleMonitoring,
-        ToggleTools,
-        ToggleMetronome,
-        ToggleTones,
-        ToggleGear,
-        TonePrevious,
-        ToneNext
-    ]
-);
-
-/// Single letters that act on the rig. Text fields sit inside the rig, so these
-/// are switched off in them, or typing a tone's name would bypass a pedal.
-const LETTER_KEYS: [&str; 5] = ["b", "g", "k", "m", "t"];
-
-/// Keys that act on the board.
-pub fn bind_keys(cx: &mut App) {
-    let rig = Some("Rig");
-    cx.bind_keys([
-        KeyBinding::new("ctrl-z", Undo, rig),
-        KeyBinding::new("ctrl-y", Redo, rig),
-        KeyBinding::new("ctrl-shift-z", Redo, rig),
-        KeyBinding::new("delete", RemoveUnit, rig),
-        KeyBinding::new("b", BypassUnit, rig),
-        KeyBinding::new("enter", OpenUnit, rig),
-        KeyBinding::new("escape", CloseUnit, rig),
-        KeyBinding::new("left", PreviousUnit, rig),
-        KeyBinding::new("right", NextUnit, rig),
-        KeyBinding::new("alt-left", MoveUnitLeft, rig),
-        KeyBinding::new("alt-right", MoveUnitRight, rig),
-        KeyBinding::new("pageup", PreviousTone, rig),
-        KeyBinding::new("pagedown", NextTone, rig),
-        KeyBinding::new("m", ToggleMonitoring, rig),
-        KeyBinding::new("t", ToggleTools, rig),
-        KeyBinding::new("k", ToggleMetronome, rig),
-        KeyBinding::new("up", TonePrevious, rig),
-        KeyBinding::new("down", ToneNext, rig),
-        KeyBinding::new("ctrl-o", ToggleTones, rig),
-        KeyBinding::new("g", ToggleGear, rig),
-    ]);
-    cx.bind_keys(
-        LETTER_KEYS
-            .iter()
-            .map(|key| KeyBinding::new(key, NoAction, Some("Input"))),
-    );
-}
-
 fn db_to_gain(db: f32) -> f32 {
     10.0_f32.powf(db / 20.0)
 }
 const ASIO_SCAN_DELAY: Duration = Duration::from_millis(300);
-const WINDOWS_AUDIO: &str = "Windows audio";
 /// The Quality param, which only A2 captures respond to.
 const AMP_QUALITY: usize = 2;
 
@@ -139,56 +82,13 @@ enum Overlay {
     Tone3000,
 }
 
-#[derive(Clone)]
-struct Choice {
-    value: String,
-    title: SharedString,
-}
-
-impl SelectItem for Choice {
-    type Value = String;
-    fn value(&self) -> &String {
-        &self.value
-    }
-    fn title(&self) -> SharedString {
-        self.title.clone()
-    }
-}
-
-fn device_choices(devices: &[DeviceOption]) -> Vec<Choice> {
-    devices
-        .iter()
-        .map(|device| Choice {
-            value: device.id.clone(),
-            title: device.name.clone().into(),
-        })
-        .collect()
-}
-
-fn driver_choices(asio: &[DeviceOption]) -> Vec<Choice> {
-    let mut choices = vec![Choice {
-        value: WINDOWS_AUDIO.to_owned(),
-        title: WINDOWS_AUDIO.into(),
-    }];
-    choices.extend(device_choices(asio));
-    choices
-}
-
-fn channel_choices(channels: u16) -> Vec<Choice> {
-    (0..channels.max(1))
-        .map(|channel| Choice {
-            value: channel.to_string(),
-            title: format!("Input {}", channel + 1).into(),
-        })
-        .collect()
-}
-
-fn position(devices: &[DeviceOption], id: Option<&str>) -> Option<IndexPath> {
-    let id = id?;
-    devices
-        .iter()
-        .position(|device| device.id == id)
-        .map(IndexPath::new)
+/// A panel's Close button.
+fn close_button(id: &'static str, cx: &mut Context<Rig>) -> Button {
+    Button::new(id)
+        .small()
+        .ghost()
+        .label("Close")
+        .on_click(cx.listener(|this, _, window, cx| this.close_overlay(window, cx)))
 }
 
 /// The main window: the devices, the board, and the tone library.
@@ -205,6 +105,8 @@ pub struct Rig {
     build: u64,
     /// The board as last saved or loaded, to tell when there are unsaved edits.
     saved_blocks: Vec<BlockPreset>,
+    /// Set until the first tone loads, which isn't an edit to undo.
+    starting: bool,
     history: Vec<Preset>,
     future: Vec<Preset>,
     /// The knob being turned, so one long turn is one step of undo.
@@ -224,6 +126,7 @@ pub struct Rig {
     explorer: Explorer,
     fretboard: Fretboard,
     tone3000: Tone3000,
+    assistant: Assistant,
     gear_open: bool,
 
     selected: Option<usize>,
@@ -261,8 +164,14 @@ impl Rig {
         if settings.output.is_none() {
             settings.output = devices.default_output.clone();
         }
-        let library =
-            Library::open(settings.library_root()).expect("the app data folder should be writable");
+        // A library on a drive that's gone shouldn't stop the app opening.
+        let library = Library::open(settings.library_root()).unwrap_or_else(|open_error| {
+            error = Some(format!("Using a temporary library: {open_error}").into());
+            settings.library = None;
+            Library::open(data_dir().join("library"))
+                .or_else(|_| Library::open(std::env::temp_dir().join("amp-gpui-library")))
+                .expect("the temporary folder should be writable")
+        });
         if let Err(seed_error) = library.seed_factory_tones() {
             error = Some(seed_error.to_string().into());
         }
@@ -344,6 +253,8 @@ impl Rig {
         let (fretboard, fretboard_subscriptions) =
             Fretboard::new(settings.key, &settings.scale, window, cx);
         subscriptions.extend(fretboard_subscriptions);
+        let (assistant, assistant_subscription) = Assistant::new(window, cx);
+        subscriptions.push(assistant_subscription);
         let mut rig = Self {
             settings,
             library,
@@ -354,6 +265,7 @@ impl Rig {
             captures,
             build: 0,
             saved_blocks: Vec::new(),
+            starting: true,
             history: Vec::new(),
             future: Vec::new(),
             last_param: None,
@@ -370,6 +282,7 @@ impl Rig {
             explorer,
             fretboard,
             tone3000: Tone3000::new(),
+            assistant,
             gear_open: false,
             selected: None,
             hover_gap: None,
@@ -423,6 +336,7 @@ impl Rig {
             self.settings_save_at = None;
             self.save_settings(cx);
         }
+        self.pump_assistant(cx);
         self.sync_tuner();
         if self.tuner_open {
             self.read_tuner();
@@ -447,129 +361,6 @@ impl Rig {
 
     fn save_settings(&mut self, cx: &mut Context<Self>) {
         if let Err(error) = self.settings.save() {
-            self.set_error(error, cx);
-        }
-    }
-
-    fn scan_asio(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.asio_devices = Engine::asio_devices();
-        let selected = self
-            .settings
-            .asio_driver
-            .as_deref()
-            .and_then(|driver| position(&self.asio_devices, Some(driver)))
-            .map_or(0, |index| index.row + 1);
-        let choices = driver_choices(&self.asio_devices);
-        self.driver_select.update(cx, |select, cx| {
-            select.set_items(choices, window, cx);
-            select.set_selected_index(Some(IndexPath::new(selected)), window, cx);
-        });
-        if self.settings.asio_driver.is_some() {
-            self.show_channels(window, cx);
-        }
-        cx.notify();
-    }
-
-    fn select_driver(&mut self, driver: String, window: &mut Window, cx: &mut Context<Self>) {
-        self.settings.asio_driver = (driver != WINDOWS_AUDIO).then_some(driver);
-        self.settings.input_channel = 0;
-        self.show_channels(window, cx);
-        self.devices_changed(cx);
-    }
-
-    /// Lists the inputs of whichever device the guitar is coming through.
-    fn show_channels(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let device = match &self.settings.asio_driver {
-            Some(driver) => self.asio_devices.iter().find(|device| &device.id == driver),
-            None => {
-                let input = self.settings.input.as_ref();
-                self.devices
-                    .inputs
-                    .iter()
-                    .find(|device| Some(&device.id) == input)
-            }
-        };
-        let channels = device.map_or(1, |device| device.channels);
-        let selected = self.settings.input_channel.min(usize::from(channels) - 1);
-        self.channel_select.update(cx, |select, cx| {
-            select.set_items(channel_choices(channels), window, cx);
-            select.set_selected_index(Some(IndexPath::new(selected)), window, cx);
-        });
-    }
-
-    fn select_input(&mut self, id: String, window: &mut Window, cx: &mut Context<Self>) {
-        let channels = self
-            .devices
-            .inputs
-            .iter()
-            .find(|device| device.id == id)
-            .map_or(1, |device| device.channels);
-        self.settings.input = Some(id);
-        self.settings.input_channel = 0;
-        self.channel_select.update(cx, |select, cx| {
-            select.set_items(channel_choices(channels), window, cx);
-            select.set_selected_index(Some(IndexPath::new(0)), window, cx);
-        });
-        self.devices_changed(cx);
-    }
-
-    /// Saves the choice, and moves live monitoring over to the new devices.
-    fn devices_changed(&mut self, cx: &mut Context<Self>) {
-        self.save_settings(cx);
-        if self.engine.is_some() {
-            self.engine = None;
-            self.start_monitoring(cx);
-        }
-        cx.notify();
-    }
-
-    fn engine_config(&self, mode: LatencyMode) -> EngineConfig {
-        EngineConfig {
-            input: self.settings.input.clone(),
-            output: self.settings.output.clone(),
-            input_channel: self.settings.input_channel,
-            mode,
-            asio_driver: self.settings.asio_driver.clone(),
-        }
-    }
-
-    /// Starts on the fastest route available. Something else may hold a device,
-    /// and playing with more latency beats not playing, so each slower route
-    /// is tried in turn.
-    fn start_monitoring(&mut self, cx: &mut Context<Self>) {
-        self.error = None;
-        let mut modes = Vec::new();
-        #[cfg(feature = "asio")]
-        if self.settings.asio_driver.is_some() {
-            modes.push(LatencyMode::Asio);
-        }
-        if !self.settings.shared_audio {
-            modes.push(LatencyMode::Exclusive);
-        }
-        modes.push(LatencyMode::Shared);
-
-        let mut first_error = None;
-        for mode in modes {
-            // A failed start takes its chain with it, so each try needs one.
-            let built = match build_chain(&self.preset, &self.library, ENGINE_RATE) {
-                Ok(built) => built,
-                Err(error) => return self.set_error(error, cx),
-            };
-            match Engine::start(Box::new(built.chain), &self.engine_config(mode)) {
-                Ok(engine) => {
-                    self.engine = Some(engine);
-                    self.apply_levels();
-                    if let Some(error) = first_error {
-                        self.error = Some(format!("{error}. Using a slower route.").into());
-                    }
-                    return cx.notify();
-                }
-                Err(error) => {
-                    first_error.get_or_insert(error);
-                }
-            }
-        }
-        if let Some(error) = first_error {
             self.set_error(error, cx);
         }
     }
@@ -604,70 +395,6 @@ impl Rig {
         cx.notify();
     }
 
-    /// Keeps the board as it is now, for Undo.
-    fn remember(&mut self) {
-        self.history.push(self.preset.clone());
-        if self.history.len() > HISTORY {
-            self.history.remove(0);
-        }
-        self.future.clear();
-        self.last_param = None;
-    }
-
-    fn restore(&mut self, preset: Preset, cx: &mut Context<Self>) {
-        self.captures = vec![None; preset.blocks.len()];
-        // Stay on the unit being worked on, if it's still there.
-        self.selected = self.selected.filter(|slot| *slot < preset.blocks.len());
-        self.preset = preset;
-        self.last_param = None;
-        self.rebuild_chain(cx);
-    }
-
-    fn undo(&mut self, cx: &mut Context<Self>) {
-        if let Some(preset) = self.history.pop() {
-            self.future
-                .push(std::mem::replace(&mut self.preset, preset.clone()));
-            self.restore(preset, cx);
-        }
-    }
-
-    fn redo(&mut self, cx: &mut Context<Self>) {
-        if let Some(preset) = self.future.pop() {
-            self.history
-                .push(std::mem::replace(&mut self.preset, preset.clone()));
-            self.restore(preset, cx);
-        }
-    }
-
-    fn step_tone(&mut self, step: isize, window: &mut Window, cx: &mut Context<Self>) {
-        let count = self.presets.len() as isize;
-        if count == 0 {
-            return;
-        }
-        let current = self
-            .presets
-            .iter()
-            .position(|entry| entry.preset.name == self.preset.name)
-            .map_or(0, |index| index as isize);
-        let next = (current + step).rem_euclid(count) as usize;
-        let preset = self.presets[next].preset.clone();
-        self.load_preset(preset, window, cx);
-    }
-
-    fn toggle_shared_audio(&mut self, cx: &mut Context<Self>) {
-        self.settings.shared_audio = !self.settings.shared_audio;
-        self.devices_changed(cx);
-    }
-
-    fn toggle_monitoring(&mut self, cx: &mut Context<Self>) {
-        if self.engine.take().is_none() {
-            self.start_monitoring(cx);
-        }
-        self.input_level = 0.0;
-        self.output_level = 0.0;
-        cx.notify();
-    }
-
     fn set_param(&mut self, slot: usize, param: usize, value: f32, cx: &mut Context<Self>) {
         if self.last_param != Some((slot, param)) {
             self.remember();
@@ -693,243 +420,6 @@ impl Rig {
         cx.notify();
     }
 
-    /// Rebuilds the running chain in the background after a board edit. Only
-    /// the newest build counts, so quick drags can't arrive out of order.
-    fn rebuild_chain(&mut self, cx: &mut Context<Self>) {
-        self.build += 1;
-        let build = self.build;
-        let preset = self.preset.clone();
-        let library = self.library.clone();
-        cx.spawn(async move |this, cx| {
-            let task = cx
-                .background_executor()
-                .spawn(async move { build_chain(&preset, &library, ENGINE_RATE) });
-            let result = task.await;
-            let _ = this.update(cx, |this, cx| {
-                if this.build != build {
-                    return;
-                }
-                match result {
-                    Ok(built) => this.adopt_chain(built, cx),
-                    Err(error) => this.set_error(error, cx),
-                }
-            });
-        })
-        .detach();
-        cx.notify();
-    }
-
-    fn adopt_chain(&mut self, built: amp_preset::BuiltChain, cx: &mut Context<Self>) {
-        self.captures = built.captures;
-        self.want_block_images(cx);
-        self.error = None;
-        if let Some(engine) = &mut self.engine {
-            engine.send(Command::SetChain(Box::new(built.chain)));
-            // Knobs may have moved while the chain was building.
-            for (slot, block) in self.preset.blocks.iter().enumerate() {
-                for param in 0..block.kind.params().len() {
-                    engine.send(Command::SetParam {
-                        slot,
-                        param,
-                        value: block.param(param),
-                    });
-                }
-            }
-        }
-        cx.notify();
-    }
-
-    /// Builds `preset` in the background and only adopts it if every model
-    /// loads, so a bad file leaves the tone playing as it was.
-    fn load_preset(&mut self, preset: Preset, window: &mut Window, cx: &mut Context<Self>) {
-        if self.restore_tone_models(&preset, window, cx) {
-            return;
-        }
-        self.build += 1;
-        let build = self.build;
-        let library = self.library.clone();
-        cx.spawn_in(window, async move |this, cx| {
-            let task = cx.background_executor().spawn(async move {
-                let built = build_chain(&preset, &library, ENGINE_RATE)?;
-                Ok::<_, LibraryError>((preset, built))
-            });
-            let result = task.await;
-            let _ = this.update_in(cx, |this, window, cx| {
-                if this.build != build {
-                    return;
-                }
-                match result {
-                    Ok((preset, built)) => {
-                        this.preset_name.update(cx, |input, cx| {
-                            input.set_value(preset.name.clone(), window, cx);
-                        });
-                        this.settings.last_tone = Some(preset.name.clone());
-                        this.note_recent(&preset.name);
-                        this.save_settings(cx);
-                        this.saved_blocks = preset.blocks.clone();
-                        this.history.clear();
-                        this.future.clear();
-                        this.last_param = None;
-                        // Open on the amp, the first thing most people reach for.
-                        this.selected = preset.blocks.iter().position(|block| {
-                            matches!(block.kind, BlockKind::Amp | BlockKind::Tube)
-                        });
-                        this.preset = preset;
-                        this.adopt_chain(built, cx);
-                    }
-                    Err(error) => this.set_error(error, cx),
-                }
-            });
-        })
-        .detach();
-    }
-
-    fn pick_path(
-        &self,
-        directories: bool,
-        prompt: &'static str,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-        then: impl FnOnce(&mut Self, PathBuf, &mut Window, &mut Context<Self>) + 'static,
-    ) {
-        let paths = cx.prompt_for_paths(PathPromptOptions {
-            files: !directories,
-            directories,
-            multiple: false,
-            prompt: Some(prompt.into()),
-        });
-        cx.spawn_in(window, async move |this, cx| {
-            if let Ok(Ok(Some(mut paths))) = paths.await
-                && let Some(path) = paths.pop()
-            {
-                let _ = this.update_in(cx, |this, window, cx| then(this, path, window, cx));
-            }
-        })
-        .detach();
-    }
-
-    /// Adds `.nam` files to the rack. One bad file shouldn't stop the rest of a
-    /// batch, so the first error is shown after everything else is in.
-    fn add_captures(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let paths = cx.prompt_for_paths(PathPromptOptions {
-            files: true,
-            directories: false,
-            multiple: true,
-            prompt: Some("Add captures".into()),
-        });
-        let library = self.library.clone();
-        cx.spawn_in(window, async move |this, cx| {
-            let Ok(Ok(Some(paths))) = paths.await else {
-                return;
-            };
-            let task = cx.background_executor().spawn(async move {
-                let mut first_error = None;
-                for path in paths {
-                    if let Err(error) = library.add_capture(&path) {
-                        first_error.get_or_insert(error.to_string());
-                    }
-                }
-                first_error
-            });
-            let error = task.await;
-            let _ = this.update(cx, |this, cx| {
-                this.refresh_catalog();
-                if let Some(error) = error {
-                    this.error = Some(error.into());
-                }
-                cx.notify();
-            });
-        })
-        .detach();
-    }
-
-    fn load_cab_ir(&mut self, slot: usize, window: &mut Window, cx: &mut Context<Self>) {
-        self.pick_path(
-            false,
-            "Load",
-            window,
-            cx,
-            move |this, path, _, cx| match this
-                .library
-                .import_asset(AssetKind::ImpulseResponse, &path)
-            {
-                Ok(asset) => {
-                    this.remember();
-                    this.preset.blocks[slot].asset = Some(asset);
-                    this.rebuild_chain(cx);
-                }
-                Err(error) => this.set_error(error, cx),
-            },
-        );
-    }
-
-    fn save_preset(&mut self, cx: &mut Context<Self>) {
-        self.preset.name = self.preset_name.read(cx).value().to_string();
-        match self.library.save_preset(&self.preset) {
-            Ok(_) => {
-                self.saved_blocks = self.preset.blocks.clone();
-                self.settings.last_tone = Some(self.preset.name.clone());
-                self.save_settings(cx);
-                self.refresh_presets();
-            }
-            Err(error) => self.set_error(error, cx),
-        }
-        cx.notify();
-    }
-
-    fn refresh_presets(&mut self) {
-        match self.library.presets() {
-            Ok((entries, errors)) => {
-                self.presets = entries;
-                if let Some(error) = errors.first() {
-                    self.error = Some(error.to_string().into());
-                }
-            }
-            Err(error) => self.error = Some(error.to_string().into()),
-        }
-    }
-
-    fn refresh_catalog(&mut self) {
-        match self.library.captures() {
-            Ok(catalog) => self.catalog = catalog,
-            Err(error) => self.error = Some(error.to_string().into()),
-        }
-    }
-
-    fn export_pack(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.pick_path(true, "Export here", window, cx, |this, path, _, cx| {
-            if let Err(error) = this.library.export_pack(&this.preset, &path) {
-                this.set_error(error, cx);
-            }
-        });
-    }
-
-    fn import_pack(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.pick_path(true, "Import", window, cx, |this, path, _, cx| {
-            match this.library.import_pack(&path) {
-                Ok(_) => this.refresh_presets(),
-                Err(error) => this.error = Some(error.to_string().into()),
-            }
-            cx.notify();
-        });
-    }
-
-    fn choose_library(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.pick_path(true, "Use this folder", window, cx, |this, path, _, cx| {
-            match Library::open(path.clone()) {
-                Ok(library) => {
-                    this.library = library;
-                    this.settings.library = Some(path);
-                    this.refresh_presets();
-                    this.refresh_catalog();
-                    this.save_settings(cx);
-                }
-                Err(error) => this.error = Some(error.to_string().into()),
-            }
-            cx.notify();
-        });
-    }
-
     fn knob(&self, slot: usize, param: usize, size: Pixels, cx: &mut Context<Self>) -> Knob {
         let block = &self.preset.blocks[slot];
         Knob::new(
@@ -942,21 +432,6 @@ impl Rig {
             }),
         )
     }
-
-    fn input_is_microphone(&self) -> bool {
-        if self.settings.asio_driver.is_some() {
-            return false;
-        }
-        let input = self.settings.input.as_ref();
-        self.devices
-            .inputs
-            .iter()
-            .find(|device| Some(&device.id) == input)
-            .is_some_and(|device| {
-                let name = device.name.to_lowercase();
-                name.contains("microphone") || name.contains("webcam")
-            })
-    }
 }
 
 impl Render for Rig {
@@ -966,8 +441,8 @@ impl Render for Rig {
             .size_full()
             .key_context("Rig")
             .track_focus(&self.focus)
-            .on_action(cx.listener(|this, _: &Undo, _, cx| this.undo(cx)))
-            .on_action(cx.listener(|this, _: &Redo, _, cx| this.redo(cx)))
+            .on_action(cx.listener(|this, _: &Undo, window, cx| this.undo(window, cx)))
+            .on_action(cx.listener(|this, _: &Redo, window, cx| this.redo(window, cx)))
             .on_action(cx.listener(|this, _: &RemoveUnit, _, cx| this.remove_selected(cx)))
             .on_action(cx.listener(|this, _: &BypassUnit, _, cx| this.bypass_selected(cx)))
             .on_action(cx.listener(|this, _: &OpenUnit, _, cx| this.open_selected(cx)))
@@ -1003,7 +478,13 @@ impl Render for Rig {
                 this.toggle_tones(window, cx);
             }))
             .on_action(cx.listener(|this, _: &ToggleGear, _, cx| this.toggle_gear(cx)))
-            .bg(hsla(0.42, 0.05, 0.065, 1.0))
+            .on_action(cx.listener(|this, _: &ToggleAssistant, window, cx| {
+                this.toggle_assistant(window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &CompareTrial, window, cx| {
+                this.compare_trial(window, cx);
+            }))
+            .bg(style::window())
             .text_color(cx.theme().foreground)
             .child(self.render_backdrop())
             .child(
@@ -1046,22 +527,32 @@ impl Render for Rig {
                         )
                     })
                     .child(
-                        div()
-                            .relative()
+                        h_flex()
                             .flex_1()
                             .min_h_0()
-                            .child(self.render_board_view(window, cx))
-                            .when(self.overlay == Overlay::Tones, |main| {
-                                main.child(self.render_explorer(cx))
-                            })
-                            .when(self.overlay == Overlay::Audio, |main| {
-                                main.child(self.render_audio_panel(cx))
-                            })
-                            .when(self.overlay == Overlay::Tools, |main| {
-                                main.child(self.render_tools(cx))
-                            })
-                            .when(self.overlay == Overlay::Tone3000, |main| {
-                                main.child(self.render_tone3000(cx))
+                            .items_start()
+                            .child(
+                                div()
+                                    .relative()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .h_full()
+                                    .child(self.render_board_view(window, cx))
+                                    .when(self.overlay == Overlay::Tones, |main| {
+                                        main.child(self.render_explorer(cx))
+                                    })
+                                    .when(self.overlay == Overlay::Audio, |main| {
+                                        main.child(self.render_audio_panel(cx))
+                                    })
+                                    .when(self.overlay == Overlay::Tools, |main| {
+                                        main.child(self.render_tools(cx))
+                                    })
+                                    .when(self.overlay == Overlay::Tone3000, |main| {
+                                        main.child(self.render_tone3000(cx))
+                                    }),
+                            )
+                            .when(self.assistant.open, |row| {
+                                row.child(self.render_assistant(cx))
                             }),
                     )
                     .child(self.render_footer(cx)),
