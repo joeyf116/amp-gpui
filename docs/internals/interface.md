@@ -8,7 +8,7 @@ The window has four bands, and the code for each lives under
 | Header | Logo, tone picker, Save, Undo, Redo, levels, meters, Monitor | `header.rs` |
 | Chain strip | The units in signal order, with drag-and-drop | `board.rs` |
 | Stage | The selected unit up close, its details, and the gear drawer | `board.rs` |
-| Footer | Audio status, Audio setup, Tuner, and view tabs | `audio.rs` |
+| Footer | Audio status, Audio setup, tempo, and Practice tools | `audio.rs` |
 
 The Tone Explorer (`explorer.rs`), the TONE3000 panel (`tone3000.rs`), and Audio
 setup (`audio.rs`) open over the stage.
@@ -36,17 +36,37 @@ the logo.
 | Accent, for what's live or selected | `#7fd6a0`, the logo's rings |
 | Highlight | `#e7f2ea`, the logo's waveform |
 
-Amber, red, and blue stay for warnings, errors, and notices. Gear keeps its own paint,
-since a pedal's color helps you tell it apart. The values live in
+Amber, red, and blue stay for warnings, errors, and notices. Gear is muted too, so
+pedals differ by shade, finish, and printed graphic. The exception is a tone with its
+own picture, which shows on its unit as a label (`art::stage`). Tube glow stays warm,
+since that's the color of a real tube. The values live in
 `crates/amp-app/assets/theme.json` and `style.rs`, and `docs/stylesheets/forest.css`
 carries them to this site.
 
-## Tone shelves
+## The Tone Explorer
 
-The shelves are filtered in `visible`, which has tests of its own. Tags come from the
-tones themselves. Favorites and recent tones are stored by name in `settings.json`,
-not in the tone files, so sharing a tone doesn't share your favorites. A renamed tone
-leaves those lists.
+The Explorer follows common filter practice: search first, multi-select filters in
+named groups, applied filters kept in view as removable chips, and a count beside each
+option that shows what pressing it would leave. Within a group, any tag matches. Across
+groups, every group has to match.
+
+`visible` does the filtering and has tests of its own. Tags sort into groups by
+`group_of`: known gain words are **Character**, `rhythm` and `lead` are **Role**, and
+anything else is **Style**, so a tag from a shared tone still has a place. Tones list
+in one line each with fixed columns, so the eye can run down them, and the longer
+notes moved to the detail panel. Favorites and recent tones are stored by name in
+`settings.json`, not in the tone files, so sharing a tone doesn't share your favorites.
+
+## Practice tools
+
+`tools.rs` holds the tuner and metronome, and `fretboard.rs` the neck. The tuner only
+listens while the panel is open: `sync_tuner` follows the overlay on each meter tick,
+however it was closed. The needle eases toward each reading so it doesn't jump.
+
+The fretboard is pure note arithmetic plus drawing. `positions` lists every place a
+MIDI note can be fretted, and a tuner reading goes on a short trail that fades. Pitch
+detection follows one note at a time, so the neck shows single notes rather than
+chords.
 
 ## TONE3000
 

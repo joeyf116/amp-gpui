@@ -27,12 +27,21 @@ pedal.
 Undo steps back through your last 64 edits on the current tone. One long turn of
 a knob counts as one edit.
 
+## Tone Explorer
+
+| Action | How |
+| --- | --- |
+| Open or close | ++ctrl+o++ |
+| Load the next or previous tone | ++up++ and ++down++ |
+| Close | ++esc++ |
+
 ## Everywhere
 
 | Action | How |
 | --- | --- |
 | Previous or next tone | ++page-up++ and ++page-down++ |
 | Start or stop monitoring | ++m++ |
-| Tuner | ++t++ |
+| Practice tools | ++t++ |
+| Metronome on or off | ++k++ |
 | Tone Explorer | ++ctrl+o++ |
 | Gear drawer | ++g++ |

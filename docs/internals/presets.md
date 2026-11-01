@@ -9,7 +9,6 @@ library/
 │   └── fern-crunch.json
 ├── assets/           Captures and IRs, named by hash
 │   └── <sha256>.nam
-├── practice/         One JSON file per tab sheet
 ├── captures.json     The gear drawer's catalog
 └── factory.json      Which factory tones this library has been given
 ```
@@ -129,14 +128,6 @@ you deleted stays gone. A library of your own tones with no factory ones in it i
 left alone. The tests judge every tone on a synthetic pluck, measuring its level
 and checking for clipping.
 
-## Practice sheets
-
-A sheet (`crates/amp-preset/src/practice.rs`) has a title and a list of sections,
-each with a name, plain text tab, and an optional tone name. Spacing in tab is
-meaningful, so it's never reflowed.
-
-A link is a tone's name, so a renamed tone needs linking again. A hash wouldn't help
-here, because the point of the link is to follow a tone as you edit it.
 
 ## Settings
 

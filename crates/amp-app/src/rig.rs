@@ -1,10 +1,10 @@
 mod audio;
 mod board;
 mod explorer;
+mod fretboard;
 mod header;
-mod practice;
 mod tone3000;
-mod tuner;
+mod tools;
 
 use crate::{knob::Knob, settings::Settings};
 use amp_dsp::{AmpInfo, BlockKind, ParamSpec, Pitch};
@@ -15,6 +15,7 @@ use amp_preset::{
     AssetKind, BlockPreset, CaptureEntry, Library, LibraryError, Preset, PresetEntry, build_chain,
 };
 use explorer::Explorer;
+use fretboard::Fretboard;
 use gpui_kit::{
     component::{
         ActiveTheme, IndexPath, Sizable,
@@ -27,8 +28,10 @@ use gpui_kit::{
     prelude::FluentBuilder,
     *,
 };
-use practice::Practice;
-use std::{path::PathBuf, time::Duration};
+use std::{
+    path::PathBuf,
+    time::{Duration, Instant},
+};
 use tone3000::Tone3000;
 
 const METER_INTERVAL: Duration = Duration::from_millis(50);
@@ -73,15 +76,18 @@ actions!(
         PreviousTone,
         NextTone,
         ToggleMonitoring,
-        ToggleTuner,
+        ToggleTools,
+        ToggleMetronome,
         ToggleTones,
-        ToggleGear
+        ToggleGear,
+        TonePrevious,
+        ToneNext
     ]
 );
 
 /// Single letters that act on the rig. Text fields sit inside the rig, so these
 /// are switched off in them, or typing a tone's name would bypass a pedal.
-const LETTER_KEYS: [&str; 4] = ["b", "g", "m", "t"];
+const LETTER_KEYS: [&str; 5] = ["b", "g", "k", "m", "t"];
 
 /// Keys that act on the board.
 pub fn bind_keys(cx: &mut App) {
@@ -101,7 +107,10 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("pageup", PreviousTone, rig),
         KeyBinding::new("pagedown", NextTone, rig),
         KeyBinding::new("m", ToggleMonitoring, rig),
-        KeyBinding::new("t", ToggleTuner, rig),
+        KeyBinding::new("t", ToggleTools, rig),
+        KeyBinding::new("k", ToggleMetronome, rig),
+        KeyBinding::new("up", TonePrevious, rig),
+        KeyBinding::new("down", ToneNext, rig),
         KeyBinding::new("ctrl-o", ToggleTones, rig),
         KeyBinding::new("g", ToggleGear, rig),
     ]);
@@ -120,18 +129,13 @@ const WINDOWS_AUDIO: &str = "Windows audio";
 /// The Quality param, which only A2 captures respond to.
 const AMP_QUALITY: usize = 2;
 
-#[derive(Clone, Copy, PartialEq)]
-enum View {
-    Board,
-    Practice,
-}
-
 /// A panel open over the main view.
 #[derive(Clone, Copy, PartialEq)]
 enum Overlay {
     None,
     Tones,
     Audio,
+    Tools,
     Tone3000,
 }
 
@@ -209,11 +213,16 @@ pub struct Rig {
     settings_save_at: Option<f32>,
     tuner_open: bool,
     tuner_samples: Vec<f32>,
+    /// Where the tuner's needle has eased to, in cents.
+    needle: f32,
+    metronome_on: bool,
+    /// The metronome's current beat, counted from 1.
+    beat: u32,
+    taps: Vec<Instant>,
     pitch: Option<Pitch>,
-    view: View,
-    practice: Practice,
     overlay: Overlay,
     explorer: Explorer,
+    fretboard: Fretboard,
     tone3000: Tone3000,
     gear_open: bool,
 
@@ -277,7 +286,7 @@ impl Rig {
         let driver_select =
             cx.new(|cx| SelectState::new(driver_choices(&[]), Some(IndexPath::new(0)), window, cx));
 
-        let subscriptions = vec![
+        let mut subscriptions = vec![
             cx.subscribe_in(
                 &driver_select,
                 window,
@@ -332,6 +341,9 @@ impl Rig {
         let focus = cx.focus_handle();
         focus.focus(window, cx);
         let explorer = Explorer::new(window, cx);
+        let (fretboard, fretboard_subscriptions) =
+            Fretboard::new(settings.key, &settings.scale, window, cx);
+        subscriptions.extend(fretboard_subscriptions);
         let mut rig = Self {
             settings,
             library,
@@ -349,11 +361,14 @@ impl Rig {
             settings_save_at: None,
             tuner_open: false,
             tuner_samples: Vec::new(),
+            needle: 0.0,
+            metronome_on: false,
+            beat: 0,
+            taps: Vec::new(),
             pitch: None,
-            view: View::Board,
-            practice: Practice::default(),
             overlay: Overlay::None,
             explorer,
+            fretboard,
             tone3000: Tone3000::new(),
             gear_open: false,
             selected: None,
@@ -375,7 +390,6 @@ impl Rig {
             _meter_timer: meter_timer,
         };
         rig.refresh_presets();
-        rig.refresh_sheets();
         rig.refresh_catalog();
         let last_tone = rig.settings.last_tone.as_deref();
         let last_tone = rig
@@ -409,6 +423,7 @@ impl Rig {
             self.settings_save_at = None;
             self.save_settings(cx);
         }
+        self.sync_tuner();
         if self.tuner_open {
             self.read_tuner();
         }
@@ -420,6 +435,7 @@ impl Rig {
             self.output_level = meters.take_output_peak().max(self.output_level * 0.8);
             self.latency = meters.latency();
             self.glitches = meters.xruns();
+            self.beat = meters.beat();
         }
         cx.notify();
     }
@@ -561,10 +577,17 @@ impl Rig {
     fn apply_levels(&mut self) {
         let tuner_open = self.tuner_open;
         let input = db_to_gain(self.settings.input_db);
-        let output = db_to_gain(self.settings.output_db);
+        let muted = tuner_open && self.settings.tuner_mute;
+        let output = if muted {
+            0.0
+        } else {
+            db_to_gain(self.settings.output_db)
+        };
+        let click = self.click();
         if let Some(engine) = &mut self.engine {
             engine.send(Command::SetInputGain(input));
             engine.send(Command::SetOutputGain(output));
+            engine.send(Command::SetClick(click));
             engine.meters().set_tuner(tuner_open);
         }
     }
@@ -898,7 +921,6 @@ impl Rig {
                     this.library = library;
                     this.settings.library = Some(path);
                     this.refresh_presets();
-                    this.refresh_sheets();
                     this.refresh_catalog();
                     this.save_settings(cx);
                 }
@@ -939,20 +961,6 @@ impl Rig {
 
 impl Render for Rig {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let body = match self.view {
-            View::Board => self.render_board_view(window, cx).into_any_element(),
-            View::Practice => v_flex()
-                .id("practice")
-                .size_full()
-                .overflow_y_scroll()
-                .gap_4()
-                .p_4()
-                .when(self.tuner_open, |column| {
-                    column.child(self.render_tuner(cx))
-                })
-                .child(self.render_practice_view(cx))
-                .into_any_element(),
-        };
         div()
             .relative()
             .size_full()
@@ -979,7 +987,18 @@ impl Render for Rig {
             .on_action(cx.listener(|this, _: &ToggleMonitoring, _, cx| {
                 this.toggle_monitoring(cx);
             }))
-            .on_action(cx.listener(|this, _: &ToggleTuner, _, cx| this.toggle_tuner(cx)))
+            .on_action(cx.listener(|this, _: &ToggleTools, window, cx| {
+                this.toggle_tools(window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &ToggleMetronome, _, cx| {
+                this.toggle_metronome(cx);
+            }))
+            .on_action(cx.listener(|this, _: &TonePrevious, window, cx| {
+                this.step_explorer(-1, window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &ToneNext, window, cx| {
+                this.step_explorer(1, window, cx);
+            }))
             .on_action(cx.listener(|this, _: &ToggleTones, window, cx| {
                 this.toggle_tones(window, cx);
             }))
@@ -1031,12 +1050,15 @@ impl Render for Rig {
                             .relative()
                             .flex_1()
                             .min_h_0()
-                            .child(body)
+                            .child(self.render_board_view(window, cx))
                             .when(self.overlay == Overlay::Tones, |main| {
                                 main.child(self.render_explorer(cx))
                             })
                             .when(self.overlay == Overlay::Audio, |main| {
                                 main.child(self.render_audio_panel(cx))
+                            })
+                            .when(self.overlay == Overlay::Tools, |main| {
+                                main.child(self.render_tools(cx))
                             })
                             .when(self.overlay == Overlay::Tone3000, |main| {
                                 main.child(self.render_tone3000(cx))

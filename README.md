@@ -69,12 +69,10 @@ one preset. Importing a pack re-hashes every file before accepting any of it.
 `.nam` and `.wav` files are ignored by this repo, since captures often have
 their own licenses. Check a capture's terms before sharing it in a pack.
 
-## Practice
+## Practice tools
 
-The Practice view shows guitar tab split into sections, and each section can
-link a saved tone, so one click loads the right sound for that part. Import a
-plain text file to add a sheet. A line like `[Verse]` starts a new section.
-Sheets are JSON files in the library's `practice` folder.
+Press T for a tuner, a metronome, and a fretboard that shows a key and scale and
+lights up the notes you play.
 
 ## Controls
 
@@ -91,7 +89,8 @@ Sheets are JSON files in the library's `practice` folder.
 | Undo and redo | Ctrl+Z, and Ctrl+Y or Ctrl+Shift+Z |
 | Previous or next tone | Page Up and Page Down |
 | Start or stop monitoring | M |
-| Tuner | T |
+| Practice tools | T |
+| Metronome on or off | K |
 | Tone Explorer | Ctrl+O |
 | Gear drawer | G |
 

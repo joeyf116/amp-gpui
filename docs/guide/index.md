@@ -13,7 +13,7 @@ After that:
 - [Load and save tones](tones.md)
 - [Build a rig](board.md) from pedals, amps, and cabinets
 - [Share tones](sharing.md) with other people
-- [Practice and tune](practice.md)
+- [Tune and practice](tools.md) with the tuner, metronome, and fretboard
 - [Keyboard and mouse](controls.md) controls
 - [Troubleshooting](troubleshooting.md)
 

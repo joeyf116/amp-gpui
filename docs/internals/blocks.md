@@ -148,6 +148,15 @@ series. The comb lengths are prime-spaced to keep echoes from lining up, and a
 | `damping` | Damping | % | 0 | 100 | 40 |
 | `mix` | Mix | % | 0 | 100 | 20 |
 
+## Metronome
+
+`Metronome` (`metronome.rs`) isn't a block either. The processor mixes it in after
+the Output level, so turning the rig down or muting it leaves the click alone, and
+the safety limiter still catches both. It counts samples with a fractional
+remainder, so a tempo that doesn't divide evenly into samples doesn't drift. Each
+click is a short decaying sine, higher on the first beat. The UI sends a whole
+`Click` at a time, and reads the current beat back from the meters.
+
 ## Tuner
 
 The tuner isn't a block. `detect_pitch` (`tuner.rs`) uses the YIN method, which

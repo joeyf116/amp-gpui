@@ -28,7 +28,6 @@ const UNIT_SLOT: f32 = 114.0;
 const FOOTSWITCH_SHARE: f32 = 0.42;
 const DETAILS_WIDTH: f32 = 232.0;
 const DRAWER_WIDTH: f32 = 232.0;
-const TUNER_HEIGHT: f32 = 92.0;
 const STAGE_MARGIN: f32 = 28.0;
 const STAGE_SCALE: (f32, f32) = (0.55, 1.2);
 const DETAILS_KNOB: Pixels = px(58.);
@@ -75,7 +74,7 @@ impl Gear {
     }
 }
 
-fn block_art(block: &BlockPreset, name: Option<&str>) -> GearArt {
+pub(super) fn block_art(block: &BlockPreset, name: Option<&str>) -> GearArt {
     let asset_name = block.asset.as_ref().map(|asset| {
         asset
             .name
@@ -655,13 +654,11 @@ impl Rig {
     /// small one.
     fn stage_scale(&self, shape: &Shape, window: &Window) -> f32 {
         let viewport = window.viewport_size();
-        let tuner = if self.tuner_open { TUNER_HEIGHT } else { 0.0 };
         let room_high = f32::from(viewport.height)
             - HEADER_HEIGHT
             - FOOTER_HEIGHT
             - STRIP_HEIGHT
-            - STAGE_MARGIN
-            - tuner;
+            - STAGE_MARGIN;
         let drawer = if self.gear_open { DRAWER_WIDTH } else { 0.0 };
         let room_wide = f32::from(viewport.width) - DETAILS_WIDTH - drawer - STAGE_MARGIN;
         let (width, height) = shape.stage_size();
@@ -704,7 +701,11 @@ impl Rig {
             })
             .collect();
         let area = art::PEDAL_SWITCH_AREA;
-        art::stage(&art, block.enabled, scale, knobs).when(art.shape.is_stomp(), |unit| {
+        let label = block
+            .origin
+            .as_ref()
+            .and_then(|origin| self.tone_image(origin));
+        art::stage(&art, block.enabled, scale, knobs, label).when(art.shape.is_stomp(), |unit| {
             unit.child(
                 div()
                     .id("stage-footswitch")
@@ -735,9 +736,6 @@ impl Rig {
         v_flex()
             .size_full()
             .child(self.render_strip(window, cx))
-            .when(self.tuner_open, |column| {
-                column.child(div().flex_shrink_0().p_2().child(self.render_tuner(cx)))
-            })
             .child(
                 h_flex()
                     .flex_1()

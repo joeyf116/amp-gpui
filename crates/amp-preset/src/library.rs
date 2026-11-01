@@ -9,7 +9,6 @@ use std::{
 
 const PRESETS: &str = "presets";
 const ASSETS: &str = "assets";
-pub(crate) const PRACTICE: &str = "practice";
 
 #[derive(Debug, thiserror::Error)]
 pub enum LibraryError {
@@ -52,7 +51,6 @@ impl Library {
         let root = root.into();
         fs::create_dir_all(root.join(PRESETS))?;
         fs::create_dir_all(root.join(ASSETS))?;
-        fs::create_dir_all(root.join(PRACTICE))?;
         Ok(Self { root })
     }
 
@@ -225,7 +223,7 @@ fn hash_file(path: &Path) -> Result<String, LibraryError> {
         .collect())
 }
 
-pub(crate) fn slug(name: &str) -> Option<String> {
+fn slug(name: &str) -> Option<String> {
     let mut slug = String::new();
     for character in name.to_lowercase().chars() {
         if character.is_alphanumeric() {

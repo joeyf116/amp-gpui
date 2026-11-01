@@ -9,6 +9,10 @@ its knobs. **Add gear** opens the gear drawer, which holds everything you can ad
 
 ![Generated gear art: stompboxes, a tube head, and two 4x12 cabinets](../assets/screens/gear.webp)
 
+Pedals share one muted finish, and each type has its own printed graphic. When a
+tone comes with its own picture, such as one from TONE3000, the picture goes on the
+unit like a label.
+
 ## Add, move, and remove gear
 
 - **Add a unit:** press **Add gear**, or ++g++, then drag a unit from the drawer

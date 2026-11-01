@@ -19,7 +19,7 @@ nav = [
     { "Find tones on TONE3000" = "guide/tone3000.md" },
     { "Generate a tone" = "guide/generate.md" },
     { "Share tones" = "guide/sharing.md" },
-    { "Practice and tune" = "guide/practice.md" },
+    { "Tune and practice" = "guide/tools.md" },
     { "Keyboard and mouse" = "guide/controls.md" },
     { "Troubleshooting" = "guide/troubleshooting.md" },
   ] },

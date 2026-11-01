@@ -627,6 +627,11 @@ impl Rig {
         true
     }
 
+    /// A chain block's picture from its tone, once it has arrived.
+    pub(super) fn tone_image(&self, origin: &ToneOrigin) -> Option<Arc<Image>> {
+        self.tone3000.images.get(origin.image.as_deref()?).cloned()
+    }
+
     /// The tone's picture, or a blank square until it arrives.
     fn picture(&self, url: Option<&str>, size: f32) -> Div {
         div()

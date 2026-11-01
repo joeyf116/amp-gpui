@@ -136,6 +136,10 @@ impl BlockKind {
         }
     }
 
+    pub fn is_amp(self) -> bool {
+        matches!(self, Self::Amp | Self::Tube)
+    }
+
     /// Whether this block needs a file from the library to make sound.
     pub fn uses_asset(self) -> bool {
         matches!(self, Self::Amp | Self::Pedal | Self::Cab)

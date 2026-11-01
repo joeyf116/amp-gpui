@@ -42,8 +42,8 @@ Tones live in a plain folder that you own and can share however you like.
   they play on a fresh install.
 - **Your own tone library.** It's a folder of JSON and files named by content
   hash, so it works in git, on a synced drive, or on a network share.
-- **A Practice view** with guitar tab whose sections can call up a tone.
-- **A built-in tuner**.
+- **Practice tools:** a tuner, a metronome, and a fretboard that shows scales and
+  lights up the notes you play.
 
 !!! note "Windows only, for now"
 

@@ -10,24 +10,24 @@ Press the arrows beside the name, or ++page-up++ and ++page-down++, to step thro
 your tones.
 
 For everything else, click the name or press ++ctrl+o++ to open the **Tone
-Explorer**.
+Explorer**. It opens ready for typing.
 
 ![The Tone Explorer](../assets/screens/tone-explorer.webp)
 
-- **Shelves:** the left side sorts tones into **All tones**, **Favorites**,
-  **Recent**, **Factory**, **My tones**, and one shelf per tag.
-- **Search:** type in the top box. It matches names, tags, and notes.
+- **Find:** type in the search box. It matches names, tags, and notes.
+- **Filter:** the left side has your shelves, such as **Favorites** and **Recent**,
+  and filters for **Character**, **Role**, and **Style**. Tick several in one group to
+  see any of them, and tick across groups to narrow the list. The number beside a
+  filter is how many tones you'd see with it on, and filters with none are dimmed.
+- **See what's applied:** filters stay above the list. Press one to remove it, or
+  **Clear all**.
+- **Compare:** click a tone, or press ++up++ and ++down++, to load it while the
+  Explorer stays open, so you can try several as you play.
+- **Read about it:** the right side describes the loaded tone and lists its signal
+  chain.
 - **Favorites:** press the star on a tone, or the star in the header.
-- **Compare:** click a tone to load it while the Explorer stays open, so you can
-  try several as you play. Double-click one, or press ++esc++, to close.
 
- Tones load in the background and crossfade in, so you can switch while
-you're playing. Delay and reverb tails from the old tone stop as it fades out.
-
-If a tone can't load, for example because a file it needs is missing, the current
-tone keeps playing and an error line tells you why.
-
-The app reopens the last tone you used.
+Double-click a tone, or press ++esc++, to close.
 
 ## Factory tones
 
@@ -60,8 +60,8 @@ they need no captures or impulse responses.
 
 **Save** in the header writes your edits to the tone that's loaded.
 
-To save a copy, open the Tone Explorer, type a new name in the box at the bottom,
-and press **Save under this name**. Saving under the name of an existing tone
+To save a copy, open the Tone Explorer, type a new name next to **Save as** at the
+bottom, and press **Save**. Saving under the name of an existing tone
 replaces it. That's also the way
 to rename a tone or start a variation.
 

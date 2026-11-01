@@ -4,7 +4,7 @@
 //! always show real values. A capture's own name is printed on it, as the file
 //! supplies it.
 
-use crate::style::{glow, lamp_glow};
+use crate::style::glow;
 use amp_dsp::BlockKind;
 use gpui_kit::{component::StyledExt, prelude::FluentBuilder, *};
 use std::sync::{Arc, OnceLock};
@@ -28,6 +28,10 @@ const PEDAL_FOOTSWITCH: (f32, f32) = (0.5, 0.8);
 const HEAD_LAMP: (f32, f32) = (0.9067, 0.7086);
 const HEAD_BADGE: (f32, f32, f32, f32) = (0.375, 0.255, 0.25, 0.126);
 const CAB_BADGE: (f32, f32, f32, f32) = (0.687, 0.82, 0.213, 0.06);
+/// Where a tone's own picture goes, as left, top, width, and height.
+const PEDAL_LABEL: (f32, f32, f32, f32) = (0.32, 0.415, 0.36, 0.195);
+const HEAD_LABEL: (f32, f32, f32, f32) = (0.17, 0.15, 0.13, 0.28);
+const CAB_LABEL: (f32, f32, f32, f32) = (0.33, 0.33, 0.34, 0.34);
 
 /// The height a stage picture is laid out for, to scale it to the window.
 pub const STAGE_HEIGHT: f32 = PEDAL_STAGE.1;
@@ -153,13 +157,11 @@ impl PedalLook {
         }
     }
 
-    /// The print color on this pedal's paint, matched to its screen printing.
+    /// The print color on this pedal's paint. Bare aluminum takes dark ink.
     fn ink(self) -> Hsla {
         match self {
-            Self::Boost => hsla(0.0, 0.0, 0.08, 1.0),
-            Self::Capture => hsla(0.4, 0.1, 0.07, 1.0),
-            Self::Fuzz => hsla(0.12, 0.62, 0.62, 1.0),
-            _ => hsla(0.12, 0.3, 0.88, 1.0),
+            Self::Capture => hsla(0.42, 0.05, 0.07, 1.0),
+            _ => hsla(0.4, 0.26, 0.93, 1.0),
         }
     }
 
@@ -310,8 +312,8 @@ fn unit_lamp(shape: &Shape, scale: f32) -> Option<Div> {
         Shape::Head { .. } => Some(lamp(
             HEAD_LAMP,
             15.0 * scale,
-            hsla(0.08, 0.92, 0.58, 0.5),
-            lamp_glow(0.75, 22.0 * scale),
+            hsla(0.41, 0.6, 0.68, 0.7),
+            glow(0.7, 20.0 * scale),
         )),
         Shape::Cabinet { .. } => None,
     }
@@ -354,7 +356,7 @@ fn plate(area: (f32, f32, f32, f32), title: SharedString, size: f32) -> Div {
         .justify_center()
         .px(px(size * 0.7))
         .child(
-            printed(title, size, hsla(0.11, 0.42, 0.72, 1.0))
+            printed(title, size, hsla(0.4, 0.26, 0.93, 1.0))
                 .font_semibold()
                 .truncate(),
         )
@@ -375,12 +377,34 @@ pub fn stage_knob(shape: &Shape, knobs: usize) -> f32 {
 pub fn faceplate_ink(shape: &Shape) -> Hsla {
     match shape {
         Shape::Stomp(look) => look.ink(),
-        _ => hsla(0.12, 0.14, 0.86, 1.0),
+        _ => hsla(0.4, 0.2, 0.9, 1.0),
     }
 }
 
-/// Draws a unit at stage size with `knobs` set into its faceplate.
-pub fn stage(art: &GearArt, enabled: bool, scale: f32, knobs: Vec<AnyElement>) -> Div {
+/// A tone's own picture, set into a unit like a printed label.
+fn label_panel(area: (f32, f32, f32, f32), picture: Arc<Image>) -> Div {
+    div()
+        .absolute()
+        .left(relative(area.0))
+        .top(relative(area.1))
+        .w(relative(area.2))
+        .h(relative(area.3))
+        .rounded_md()
+        .overflow_hidden()
+        .border_1()
+        .border_color(hsla(0.0, 0.0, 0.0, 0.6))
+        .child(img(picture).size_full().object_fit(ObjectFit::Cover))
+}
+
+/// Draws a unit at stage size with `knobs` set into its faceplate. When a tone
+/// comes with its own picture, that goes on the unit as a label.
+pub fn stage(
+    art: &GearArt,
+    enabled: bool,
+    scale: f32,
+    knobs: Vec<AnyElement>,
+    label: Option<Arc<Image>>,
+) -> Div {
     let (width, height) = art.shape.stage_size();
     let unit = div()
         .relative()
@@ -391,7 +415,17 @@ pub fn stage(art: &GearArt, enabled: bool, scale: f32, knobs: Vec<AnyElement>) -
         .when_some(
             unit_lamp(&art.shape, scale).filter(|_| enabled),
             |unit, lamp| unit.child(lamp),
-        );
+        )
+        .when_some(label, |unit, picture| {
+            unit.child(label_panel(
+                match art.shape {
+                    Shape::Stomp(_) => PEDAL_LABEL,
+                    Shape::Head { .. } => HEAD_LABEL,
+                    Shape::Cabinet { .. } => CAB_LABEL,
+                },
+                picture,
+            ))
+        });
     let row = div().absolute().flex().items_start().justify_around();
     match &art.shape {
         Shape::Stomp(look) => unit

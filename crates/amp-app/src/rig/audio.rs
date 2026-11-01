@@ -1,7 +1,7 @@
 //! The footer and the Audio setup panel. Devices are set once and left alone,
 //! so they fold away, and the footer reports how the audio path is doing.
 
-use super::{FOOTER_HEIGHT, Overlay, Rig, View};
+use super::{FOOTER_HEIGHT, Overlay, Rig};
 use crate::style::{bar, fog, glow, hairline, moss, sheet};
 use amp_engine::LatencyMode;
 use gpui_kit::{
@@ -34,24 +34,6 @@ impl Rig {
             self.latency.total_ms(),
             self.glitches
         )
-    }
-
-    fn render_tab(
-        &self,
-        id: &'static str,
-        label: &'static str,
-        view: View,
-        cx: &mut Context<Self>,
-    ) -> impl IntoElement {
-        Button::new(id)
-            .small()
-            .label(label)
-            .when(self.view == view, |button| button.outline())
-            .when(self.view != view, |button| button.ghost())
-            .on_click(cx.listener(move |this, _, _, cx| {
-                this.view = view;
-                cx.notify();
-            }))
     }
 
     pub(super) fn render_footer(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -94,17 +76,33 @@ impl Rig {
                     })),
             )
             .child(div().flex_1())
+            .when(self.metronome_on, |bar| {
+                bar.child(
+                    div()
+                        .size(px(8.))
+                        .rounded_full()
+                        .when(self.beat == 1, |lamp| {
+                            lamp.bg(moss()).shadow(vec![glow(0.7, 8.0)])
+                        })
+                        .when(self.beat != 1, |lamp| lamp.bg(hairline())),
+                )
+                .child(
+                    div()
+                        .text_xs()
+                        .text_color(fog())
+                        .whitespace_nowrap()
+                        .child(format!("{:.0} BPM", self.settings.bpm)),
+                )
+            })
             .child(
-                Button::new("tuner")
+                Button::new("tools")
                     .small()
-                    .label("Tuner")
+                    .label("Practice tools")
                     .when(self.tuner_open, |button| button.outline())
                     .when(!self.tuner_open, |button| button.ghost())
                     .tooltip("Press T")
-                    .on_click(cx.listener(|this, _, _, cx| this.toggle_tuner(cx))),
+                    .on_click(cx.listener(|this, _, window, cx| this.toggle_tools(window, cx))),
             )
-            .child(self.render_tab("tab-board", "Rig", View::Board, cx))
-            .child(self.render_tab("tab-practice", "Practice", View::Practice, cx))
     }
 
     pub(super) fn render_audio_panel(&self, cx: &mut Context<Self>) -> impl IntoElement {

@@ -13,6 +13,7 @@ mod drive;
 mod effects;
 mod filter;
 mod gate;
+mod metronome;
 mod smooth;
 mod tube;
 mod tuner;
@@ -25,6 +26,7 @@ pub use delay::Delay;
 pub use drive::Drive;
 pub use effects::{Chorus, Compressor, Reverb};
 pub use gate::Gate;
+pub use metronome::{Click, Metronome};
 pub use tube::TubeAmp;
 pub use tuner::{Pitch, detect_pitch};
 

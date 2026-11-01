@@ -344,17 +344,20 @@ def graphic_capture(draw, w, h):
             draw.ellipse([x - 9, y - 9, x + 9, y + 9], fill=255)
 
 
+# Every pedal shares one muted family, told apart by shade, finish, and graphic.
+# The printed graphic takes the logo's green, and text is drawn in its off-white.
+LOGO_INK = (0.5, 0.84, 0.63)
 PEDALS = {
-    "gate": ((0.27, 0.3, 0.31), wrinkle, graphic_gate, (0.86, 0.87, 0.84), 0.16),
-    "compressor": ((0.07, 0.19, 0.3), hammertone, graphic_compressor, (0.87, 0.83, 0.71), 0.3),
-    "boost": ((0.7, 0.65, 0.53), satin, graphic_boost, (0.1, 0.1, 0.09), 0.2),
-    "overdrive": ((0.45, 0.2, 0.09), hammertone, graphic_overdrive, (0.93, 0.83, 0.65), 0.35),
-    "distortion": ((0.27, 0.035, 0.045), wrinkle, graphic_distortion, (0.9, 0.84, 0.74), 0.16),
-    "fuzz": ((0.25, 0.07, 0.2), hammertone, graphic_fuzz, (0.86, 0.68, 0.26), 0.3),
-    "modulation": ((0.22, 0.18, 0.36), satin, graphic_modulation, (0.84, 0.86, 0.92), 0.26),
-    "delay": ((0.05, 0.19, 0.14), satin, graphic_delay, (0.8, 0.9, 0.82), 0.26),
-    "reverb": ((0.2, 0.27, 0.36), hammertone, graphic_reverb, (0.88, 0.91, 0.93), 0.28),
-    "capture": ((0.56, 0.57, 0.56), brushed, graphic_capture, (0.07, 0.09, 0.08), 0.3),
+    "gate": ((0.2, 0.21, 0.205), wrinkle, graphic_gate, LOGO_INK, 0.16),
+    "compressor": ((0.115, 0.12, 0.118), hammertone, graphic_compressor, LOGO_INK, 0.3),
+    "boost": ((0.33, 0.34, 0.335), satin, graphic_boost, LOGO_INK, 0.2),
+    "overdrive": ((0.16, 0.165, 0.162), hammertone, graphic_overdrive, LOGO_INK, 0.32),
+    "distortion": ((0.06, 0.063, 0.062), wrinkle, graphic_distortion, LOGO_INK, 0.16),
+    "fuzz": ((0.09, 0.094, 0.092), hammertone, graphic_fuzz, LOGO_INK, 0.3),
+    "modulation": ((0.25, 0.258, 0.254), satin, graphic_modulation, LOGO_INK, 0.26),
+    "delay": ((0.1, 0.105, 0.103), satin, graphic_delay, LOGO_INK, 0.26),
+    "reverb": ((0.28, 0.288, 0.284), hammertone, graphic_reverb, LOGO_INK, 0.28),
+    "capture": ((0.56, 0.57, 0.565), brushed, graphic_capture, (0.07, 0.09, 0.08), 0.3),
 }
 
 
@@ -445,7 +448,7 @@ def jewel(canvas, cx, cy, radius):
     bezel, mask = round_part(canvas, cx, cy, radius * 1.42, lambda s: 0.3 * np.sqrt(np.maximum(1 - (2 * s - 1.3) ** 2, 0)))
     canvas.drop_shadow(mask, (2, 3), 3.0, 0.6)
     canvas.over(metal(bezel, (0.8, 0.8, 0.76)), mask)
-    albedo = np.ones((canvas.height, canvas.width, 3), np.float32) * np.array((0.17, 0.05, 0.02), np.float32)
+    albedo = np.ones((canvas.height, canvas.width, 3), np.float32) * np.array((0.05, 0.1, 0.075), np.float32)
     canvas.over(lit(albedo, surface, 0.8, 44.0), coverage((r - 1.0) * radius))
 
 
@@ -475,7 +478,7 @@ def tube_vent(canvas, left, top, right, bottom):
         cx = left + wide * (0.2 + index * 0.2)
         ball = np.hypot((canvas.x - cx) / 38, (canvas.y - (top + tall * 0.6)) / (tall * 0.42))
         glass = np.maximum(glass, smooth(1.1, 0.0, ball))
-    heat = blur(glass, 26) * 1.5
+    heat = blur(glass, 26) * 0.9
     light = np.dstack([heat, heat * 0.46, heat * 0.11]) + 0.012
     canvas.over(light, coverage(opening))
     canvas.shade(coverage(opening) * smooth(16, 0, canvas.y - top), 0.8)
@@ -504,7 +507,7 @@ def badge_plate(canvas, cx, cy, wide, tall):
     albedo = np.ones((canvas.height, canvas.width, 3), np.float32) * np.array((0.035, 0.04, 0.038), np.float32)
     canvas.drop_shadow(coverage(plate), (2, 3), 3.0, 0.7)
     canvas.over(lit(albedo, surface, 0.3, 30.0), coverage(plate))
-    piping(canvas, cx - wide + 5, cy - tall + 5, cx + wide - 5, cy + tall - 5, 3, (0.45, 0.37, 0.22), 1.2)
+    piping(canvas, cx - wide + 5, cy - tall + 5, cx + wide - 5, cy + tall - 5, 3, (0.34, 0.35, 0.345), 1.2)
 
 
 def render_head(color, panel, trim):
@@ -749,7 +752,7 @@ def main():
         print("pedal", name)
         save(render_pedal(name), f"pedal_{name}")
     print("heads and cabinets")
-    save(render_head((0.038, 0.042, 0.04), (0.11, 0.115, 0.11), (0.45, 0.37, 0.22)), "head_understory")
+    save(render_head((0.038, 0.042, 0.04), (0.11, 0.115, 0.11), (0.3, 0.31, 0.305)), "head_understory")
     save(render_head((0.07, 0.075, 0.072), (0.17, 0.175, 0.172), (0.17, 0.18, 0.175)), "head_capture")
     save(render_cab(False), "cab_closed")
     save(render_cab(True), "cab_open")

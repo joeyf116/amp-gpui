@@ -30,8 +30,7 @@ including:
 - a folder on a synced drive
 - a network share
 
-Everyone who points the app at that folder sees the same tones, captures, and
-practice sheets. If the folder has no tones in it, the factory tones are added
+Everyone who points the app at that folder sees the same tones and captures. If the folder has no tones in it, the factory tones are added
 the next time the app starts.
 
 Because each file is named by a hash of its contents, a tone means exactly the

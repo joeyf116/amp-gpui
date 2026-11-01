@@ -9,7 +9,7 @@ part of the system and explains how it works and why it's built that way.
 | --- | --- | --- |
 | `amp-dsp` | The blocks and the chain: amp, cabinet, drives, effects, tuner | Audio thread |
 | `amp-engine` | Devices, resampling, clock drift, and messaging between the UI and audio threads | Audio thread and UI thread |
-| `amp-preset` | Preset format, tone library, tone packs, factory tones, practice sheets | Background threads |
+| `amp-preset` | Preset format, tone library, tone packs, factory tones | Background threads |
 | `amp-app` | The GPUI interface | UI thread |
 
 Dependencies run in one direction. `amp-preset` and `amp-engine` both build on

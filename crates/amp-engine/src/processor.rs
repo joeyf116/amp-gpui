@@ -1,4 +1,5 @@
-use amp_dsp::Chain;
+use crate::pump::ENGINE_RATE;
+use amp_dsp::{Chain, Click, Metronome};
 use rtrb::{Consumer, Producer, RingBuffer};
 use std::{
     sync::{
@@ -39,6 +40,8 @@ pub enum Command {
     /// Replaces the whole chain. It is boxed because building one allocates
     /// and loads files, and all of that has to stay off the audio thread.
     SetChain(Box<Chain>),
+    /// Starts, stops, or changes the metronome.
+    SetClick(Click),
 }
 
 /// Levels and health the audio thread publishes for the UI to poll.
@@ -51,6 +54,7 @@ pub struct Meters {
     queue_us: AtomicU32,
     output_device_us: AtomicU32,
     tuner_on: AtomicBool,
+    beat: AtomicU32,
 }
 
 /// Where the delay between string and speaker goes. Only what the drivers
@@ -72,6 +76,11 @@ impl Meters {
     /// Tells the audio thread whether to copy the guitar to the tuner.
     pub fn set_tuner(&self, on: bool) {
         self.tuner_on.store(on, Ordering::Relaxed);
+    }
+
+    /// The metronome's current beat, counted from 1, or 0 while it's stopped.
+    pub fn beat(&self) -> u32 {
+        self.beat.load(Ordering::Relaxed)
     }
 
     pub fn latency(&self) -> Latency {
@@ -167,6 +176,7 @@ pub struct Processor {
     tuner: Producer<f32>,
     input_gain: Ramp,
     output_gain: Ramp,
+    metronome: Metronome,
     meters: Arc<Meters>,
 }
 
@@ -225,6 +235,7 @@ pub fn processor(chain: Box<Chain>) -> (Processor, Controller) {
             tuner: tuner_tx,
             input_gain: Ramp::new(),
             output_gain: Ramp::new(),
+            metronome: Metronome::new(ENGINE_RATE as f32),
             meters: meters.clone(),
         },
         Controller {
@@ -256,7 +267,15 @@ impl Processor {
         self.chain.process(buffer);
         self.mix_in_fade(&mut buffer[..faded]);
         for sample in buffer.iter_mut() {
-            *sample = limit(*sample * self.output_gain.next());
+            *sample *= self.output_gain.next();
+        }
+        // After the Output level, so turning the rig down leaves the click alone.
+        self.metronome.mix(buffer);
+        self.meters
+            .beat
+            .store(self.metronome.beat(), Ordering::Relaxed);
+        for sample in buffer.iter_mut() {
+            *sample = limit(*sample);
         }
         Meters::raise(&self.meters.output_peak, peak(buffer));
     }
@@ -279,6 +298,7 @@ impl Processor {
                 }
                 Command::SetInputGain(gain) => self.input_gain.target = gain,
                 Command::SetOutputGain(gain) => self.output_gain.target = gain,
+                Command::SetClick(click) => self.metronome.set(click),
                 Command::SetChain(chain) => {
                     let old = std::mem::replace(&mut self.chain, chain);
                     if let Some(fade) = self.fade.take() {
@@ -435,6 +455,26 @@ mod tests {
             .fold(0.0_f32, |step, pair| step.max((pair[0] - pair[1]).abs()));
         assert!(largest_step < 0.01, "jumped by {largest_step}");
         assert_eq!(buffer[FADE_FRAMES + 7], 0.0);
+    }
+
+    #[test]
+    fn the_click_plays_over_a_silenced_rig_and_reports_its_beat() {
+        let (mut processor, mut controller) = processor(scale_chain(1.0));
+        assert!(controller.send(Command::SetOutputGain(0.0)).is_ok());
+        assert!(
+            controller
+                .send(Command::SetClick(Click {
+                    on: true,
+                    bpm: 120.0,
+                    beats: 4,
+                    level: 0.5,
+                }))
+                .is_ok()
+        );
+        let mut buffer = [0.0; 1_024];
+        processor.process(&mut buffer);
+        assert!(buffer.iter().any(|sample| sample.abs() > 0.1));
+        assert_eq!(controller.meters.beat(), 1);
     }
 
     #[test]

@@ -37,17 +37,8 @@ pub fn fog() -> Hsla {
 
 /// A soft halo in moss light.
 pub fn glow(alpha: f32, radius: f32) -> BoxShadow {
-    halo(moss_glow(alpha), radius)
-}
-
-/// The warm halo of a pilot lamp.
-pub fn lamp_glow(alpha: f32, radius: f32) -> BoxShadow {
-    halo(hsla(0.08, 0.95, 0.55, alpha), radius)
-}
-
-fn halo(color: Hsla, radius: f32) -> BoxShadow {
     BoxShadow {
-        color,
+        color: moss_glow(alpha),
         offset: point(px(0.), px(0.)),
         blur_radius: px(radius),
         spread_radius: px(0.),

@@ -4,7 +4,8 @@ use std::{fs, path::PathBuf};
 
 /// What the app remembers between runs. Device choices matter most: the
 /// default input on most machines is a webcam, not the guitar.
-#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(default)]
 pub struct Settings {
     pub input: Option<String>,
     pub output: Option<String>,
@@ -30,6 +31,63 @@ pub struct Settings {
     /// Tones loaded lately, by name, newest first.
     #[serde(default)]
     pub recent: Vec<String>,
+    #[serde(default = "default_bpm")]
+    pub bpm: f32,
+    #[serde(default = "default_beats")]
+    pub beats: u32,
+    #[serde(default = "default_click_db")]
+    pub click_db: f32,
+    /// Silences the rig while the tuner is open.
+    #[serde(default)]
+    pub tuner_mute: bool,
+    /// The fretboard's key, as a semitone above C.
+    #[serde(default = "default_key")]
+    pub key: usize,
+    pub scale: String,
+    /// Set to label the fretboard with intervals rather than note names.
+    pub fret_intervals: bool,
+}
+
+/// A, the key most guitar players reach for first.
+fn default_key() -> usize {
+    9
+}
+
+fn default_bpm() -> f32 {
+    120.0
+}
+
+fn default_beats() -> u32 {
+    4
+}
+
+fn default_click_db() -> f32 {
+    -12.0
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            input: None,
+            output: None,
+            input_channel: 0,
+            library: None,
+            last_tone: None,
+            shared_audio: false,
+            input_db: 0.0,
+            output_db: 0.0,
+            asio_driver: None,
+            favorites: Vec::new(),
+            recent: Vec::new(),
+            bpm: default_bpm(),
+            beats: default_beats(),
+            click_db: default_click_db(),
+            tuner_mute: false,
+            key: default_key(),
+            scale: String::new(),
+            fret_intervals: false,
+        }
+    }
 }
 
 /// `AMP_GPUI_DATA` points the app at another folder, which keeps test runs away
