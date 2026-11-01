@@ -52,6 +52,8 @@ pub enum BlockKind {
     Gate,
     Drive,
     Amp,
+    /// A NAM capture of a pedal. It runs like an amp capture and sits anywhere.
+    Pedal,
     Cab,
     Delay,
 }
@@ -62,6 +64,7 @@ impl BlockKind {
             Self::Gate => "Noise gate",
             Self::Drive => "Drive",
             Self::Amp => "Amp",
+            Self::Pedal => "Pedal",
             Self::Cab => "Cabinet",
             Self::Delay => "Delay",
         }
@@ -90,7 +93,7 @@ impl BlockKind {
         match self {
             Self::Gate => GATE,
             Self::Drive => DRIVE,
-            Self::Amp => AMP,
+            Self::Amp | Self::Pedal => AMP,
             Self::Cab => CAB,
             Self::Delay => DELAY,
         }
@@ -98,6 +101,6 @@ impl BlockKind {
 
     /// Whether this block needs a file from the library to make sound.
     pub fn uses_asset(self) -> bool {
-        matches!(self, Self::Amp | Self::Cab)
+        matches!(self, Self::Amp | Self::Pedal | Self::Cab)
     }
 }

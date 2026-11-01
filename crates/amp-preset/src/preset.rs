@@ -45,7 +45,7 @@ impl AssetKind {
 
     pub fn for_block(kind: BlockKind) -> Option<Self> {
         match kind {
-            BlockKind::Amp => Some(Self::NamModel),
+            BlockKind::Amp | BlockKind::Pedal => Some(Self::NamModel),
             BlockKind::Cab => Some(Self::ImpulseResponse),
             _ => None,
         }

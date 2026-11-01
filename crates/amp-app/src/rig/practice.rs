@@ -1,5 +1,5 @@
 use super::Rig;
-use crate::knob::accent;
+use crate::style::moss;
 use amp_preset::PracticeSheet;
 use gpui_kit::{
     component::{
@@ -132,7 +132,7 @@ impl Rig {
             .p_3()
             .rounded_lg()
             .border_1()
-            .border_color(if active { accent() } else { cx.theme().border })
+            .border_color(if active { moss() } else { cx.theme().border })
             .bg(cx.theme().secondary)
             .child(
                 h_flex()

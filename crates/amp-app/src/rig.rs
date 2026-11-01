@@ -1,14 +1,18 @@
+mod board;
 mod practice;
 
 use crate::{
-    knob::{Knob, accent},
+    knob::Knob,
     settings::Settings,
+    style::{fog, hairline, pane},
 };
-use amp_dsp::{AmpInfo, BlockKind};
+use amp_dsp::AmpInfo;
 use amp_engine::{
     Command, DeviceList, DeviceOption, ENGINE_RATE, Engine, EngineConfig, Latency, LatencyMode,
 };
-use amp_preset::{AssetKind, Library, Preset, PresetEntry, build_chain};
+use amp_preset::{
+    AssetKind, CaptureEntry, Library, LibraryError, Preset, PresetEntry, build_chain,
+};
 use gpui_kit::{
     component::{
         ActiveTheme, IndexPath, Sizable, StyledExt,
@@ -26,15 +30,12 @@ use std::{path::PathBuf, time::Duration};
 
 const METER_INTERVAL: Duration = Duration::from_millis(50);
 const METER_FLOOR_DB: f32 = -60.0;
-const CARD_KNOB: Pixels = px(52.);
-const AMP_KNOB: Pixels = px(96.);
 /// The Quality param, which only A2 captures respond to.
 const AMP_QUALITY: usize = 2;
 
 #[derive(Clone, Copy, PartialEq)]
 enum View {
-    Amp,
-    Rig,
+    Board,
     Practice,
 }
 
@@ -81,16 +82,25 @@ fn position(devices: &[DeviceOption], id: Option<&str>) -> Option<IndexPath> {
         .map(IndexPath::new)
 }
 
-/// The main window: the devices, the amp, the chain, and the tone library.
+/// The main window: the devices, the board, and the tone library.
 pub struct Rig {
     settings: Settings,
     library: Library,
     presets: Vec<PresetEntry>,
+    catalog: Vec<CaptureEntry>,
     preset: Preset,
     preset_name: Entity<InputState>,
-    amp_info: Option<AmpInfo>,
+    /// What each block's capture says about itself, in chain order.
+    captures: Vec<Option<AmpInfo>>,
+    /// Counts chain builds, so a slow one can't overwrite a newer edit.
+    build: u64,
     view: View,
     practice: Practice,
+
+    selected: Option<usize>,
+    settings_open: bool,
+    hover_gap: Option<usize>,
+    smoke_phase: f32,
 
     devices: DeviceList,
     input_select: Entity<SelectState<Vec<Choice>>>,
@@ -182,15 +192,22 @@ impl Rig {
         let preset = Preset::starter("New tone");
         let name = preset.name.clone();
         let preset_name = cx.new(|cx| InputState::new(window, cx).default_value(name));
+        let captures = vec![None; preset.blocks.len()];
         let mut rig = Self {
             settings,
             library,
             presets: Vec::new(),
+            catalog: Vec::new(),
             preset,
             preset_name,
-            amp_info: None,
-            view: View::Amp,
+            captures,
+            build: 0,
+            view: View::Board,
             practice: Practice::default(),
+            selected: None,
+            settings_open: false,
+            hover_gap: None,
+            smoke_phase: 0.0,
             devices,
             input_select,
             channel_select,
@@ -206,6 +223,7 @@ impl Rig {
         };
         rig.refresh_presets();
         rig.refresh_sheets();
+        rig.refresh_catalog();
         let last_tone = rig.settings.last_tone.as_deref();
         let last_tone = rig
             .presets
@@ -219,16 +237,16 @@ impl Rig {
     }
 
     fn tick(&mut self, cx: &mut Context<Self>) {
-        let Some(engine) = &mut self.engine else {
-            return;
-        };
-        engine.drop_retired();
-        let meters = engine.meters();
-        // Fall back slowly, so a pick attack stays readable on the meter.
-        self.input_level = meters.take_input_peak().max(self.input_level * 0.8);
-        self.output_level = meters.take_output_peak().max(self.output_level * 0.8);
-        self.latency = meters.latency();
-        self.glitches = meters.xruns();
+        self.smoke_phase += METER_INTERVAL.as_secs_f32();
+        if let Some(engine) = &mut self.engine {
+            engine.drop_retired();
+            let meters = engine.meters();
+            // Fall back slowly, so a pick attack stays readable on the meter.
+            self.input_level = meters.take_input_peak().max(self.input_level * 0.8);
+            self.output_level = meters.take_output_peak().max(self.output_level * 0.8);
+            self.latency = meters.latency();
+            self.glitches = meters.xruns();
+        }
         cx.notify();
     }
 
@@ -348,32 +366,81 @@ impl Rig {
         cx.notify();
     }
 
+    /// Rebuilds the running chain in the background after a board edit. Only
+    /// the newest build counts, so quick drags can't arrive out of order.
+    fn rebuild_chain(&mut self, cx: &mut Context<Self>) {
+        self.build += 1;
+        let build = self.build;
+        let preset = self.preset.clone();
+        let library = self.library.clone();
+        cx.spawn(async move |this, cx| {
+            let task = cx
+                .background_executor()
+                .spawn(async move { build_chain(&preset, &library, ENGINE_RATE) });
+            let result = task.await;
+            let _ = this.update(cx, |this, cx| {
+                if this.build != build {
+                    return;
+                }
+                match result {
+                    Ok(built) => this.adopt_chain(built, cx),
+                    Err(error) => this.set_error(error, cx),
+                }
+            });
+        })
+        .detach();
+        cx.notify();
+    }
+
+    fn adopt_chain(&mut self, built: amp_preset::BuiltChain, cx: &mut Context<Self>) {
+        self.captures = built.captures;
+        self.error = None;
+        if let Some(engine) = &mut self.engine {
+            engine.send(Command::SetChain(Box::new(built.chain)));
+            // Knobs may have moved while the chain was building.
+            for (slot, block) in self.preset.blocks.iter().enumerate() {
+                for param in 0..block.kind.params().len() {
+                    engine.send(Command::SetParam {
+                        slot,
+                        param,
+                        value: block.param(param),
+                    });
+                }
+            }
+        }
+        cx.notify();
+    }
+
     /// Builds `preset` in the background and only adopts it if every model
     /// loads, so a bad file leaves the tone playing as it was.
     fn load_preset(&mut self, preset: Preset, window: &mut Window, cx: &mut Context<Self>) {
+        self.build += 1;
+        let build = self.build;
         let library = self.library.clone();
         cx.spawn_in(window, async move |this, cx| {
             let task = cx.background_executor().spawn(async move {
                 let built = build_chain(&preset, &library, ENGINE_RATE)?;
-                Ok::<_, amp_preset::LibraryError>((preset, built))
+                Ok::<_, LibraryError>((preset, built))
             });
             let result = task.await;
-            let _ = this.update_in(cx, |this, window, cx| match result {
-                Ok((preset, built)) => {
-                    this.preset_name.update(cx, |input, cx| {
-                        input.set_value(preset.name.clone(), window, cx);
-                    });
-                    this.settings.last_tone = Some(preset.name.clone());
-                    this.save_settings(cx);
-                    this.preset = preset;
-                    this.amp_info = built.amp;
-                    this.error = None;
-                    if let Some(engine) = &mut this.engine {
-                        engine.send(Command::SetChain(Box::new(built.chain)));
-                    }
-                    cx.notify();
+            let _ = this.update_in(cx, |this, window, cx| {
+                if this.build != build {
+                    return;
                 }
-                Err(error) => this.set_error(error, cx),
+                match result {
+                    Ok((preset, built)) => {
+                        this.preset_name.update(cx, |input, cx| {
+                            input.set_value(preset.name.clone(), window, cx);
+                        });
+                        this.settings.last_tone = Some(preset.name.clone());
+                        this.save_settings(cx);
+                        this.preset = preset;
+                        this.selected = None;
+                        this.settings_open = false;
+                        this.adopt_chain(built, cx);
+                    }
+                    Err(error) => this.set_error(error, cx),
+                }
             });
         })
         .detach();
@@ -403,20 +470,40 @@ impl Rig {
         .detach();
     }
 
-    fn load_asset(&mut self, slot: usize, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(kind) = AssetKind::for_block(self.preset.blocks[slot].kind) else {
-            return;
-        };
+    /// Adds a `.nam` file to the rack.
+    fn add_capture(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.pick_path(false, "Add capture", window, cx, |this, path, _, cx| {
+            let library = this.library.clone();
+            cx.spawn(async move |this, cx| {
+                let task = cx
+                    .background_executor()
+                    .spawn(async move { library.add_capture(&path) });
+                let result = task.await;
+                let _ = this.update(cx, |this, cx| {
+                    match result {
+                        Ok(_) => this.refresh_catalog(),
+                        Err(error) => this.error = Some(error.to_string().into()),
+                    }
+                    cx.notify();
+                });
+            })
+            .detach();
+        });
+    }
+
+    fn load_cab_ir(&mut self, slot: usize, window: &mut Window, cx: &mut Context<Self>) {
         self.pick_path(
             false,
             "Load",
             window,
             cx,
-            move |this, path, window, cx| match this.library.import_asset(kind, &path) {
+            move |this, path, _, cx| match this
+                .library
+                .import_asset(AssetKind::ImpulseResponse, &path)
+            {
                 Ok(asset) => {
-                    let mut preset = this.preset.clone();
-                    preset.blocks[slot].asset = Some(asset);
-                    this.load_preset(preset, window, cx);
+                    this.preset.blocks[slot].asset = Some(asset);
+                    this.rebuild_chain(cx);
                 }
                 Err(error) => this.set_error(error, cx),
             },
@@ -448,6 +535,13 @@ impl Rig {
         }
     }
 
+    fn refresh_catalog(&mut self) {
+        match self.library.captures() {
+            Ok(catalog) => self.catalog = catalog,
+            Err(error) => self.error = Some(error.to_string().into()),
+        }
+    }
+
     fn export_pack(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.pick_path(true, "Export here", window, cx, |this, path, _, cx| {
             if let Err(error) = this.library.export_pack(&this.preset, &path) {
@@ -474,19 +568,13 @@ impl Rig {
                     this.settings.library = Some(path);
                     this.refresh_presets();
                     this.refresh_sheets();
+                    this.refresh_catalog();
                     this.save_settings(cx);
                 }
                 Err(error) => this.error = Some(error.to_string().into()),
             }
             cx.notify();
         });
-    }
-
-    fn slot_of(&self, kind: BlockKind) -> Option<usize> {
-        self.preset
-            .blocks
-            .iter()
-            .position(|block| block.kind == kind)
     }
 
     fn knob(&self, slot: usize, param: usize, size: Pixels, cx: &mut Context<Self>) -> Knob {
@@ -517,25 +605,20 @@ impl Rig {
             .child(
                 div()
                     .w(px(110.))
-                    .h(px(6.))
+                    .h(px(4.))
                     .rounded_sm()
-                    .bg(cx.theme().muted)
+                    .bg(hairline())
                     .child(div().h_full().rounded_sm().w(relative(fill)).bg(color)),
             )
     }
 
     fn render_device_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let live = self.engine.is_some();
-        let picker = |label: &'static str, select: AnyElement, cx: &App| {
+        let picker = |label: &'static str, select: AnyElement| {
             v_flex()
                 .gap_1()
                 .min_w_0()
-                .child(
-                    div()
-                        .text_xs()
-                        .text_color(cx.theme().muted_foreground)
-                        .child(label),
-                )
+                .child(div().text_xs().text_color(fog()).child(label))
                 .child(select)
         };
         h_flex()
@@ -543,29 +626,27 @@ impl Rig {
             .p_3()
             .items_end()
             .border_b_1()
-            .border_color(cx.theme().border)
+            .border_color(hairline())
+            .bg(pane())
             .child(picker(
                 "Guitar in",
                 Select::new(&self.input_select)
                     .placeholder("Choose your interface")
-                    .w(px(280.))
+                    .w(px(260.))
                     .into_any_element(),
-                cx,
             ))
             .child(picker(
                 "Channel",
                 Select::new(&self.channel_select)
-                    .w(px(110.))
+                    .w(px(100.))
                     .into_any_element(),
-                cx,
             ))
             .child(picker(
                 "Speakers out",
                 Select::new(&self.output_select)
                     .placeholder("Choose an output")
-                    .w(px(280.))
+                    .w(px(260.))
                     .into_any_element(),
-                cx,
             ))
             .child(
                 Button::new("monitor")
@@ -596,294 +677,30 @@ impl Rig {
                     .child(self.render_meter("In", self.input_level, cx))
                     .child(self.render_meter("Out", self.output_level, cx))
                     .when(live, |column| {
-                        column.child(
-                            div()
-                                .text_xs()
-                                .text_color(cx.theme().muted_foreground)
-                                .child(format!(
-                                    "{:.0} ms latency ({}), {} glitches",
-                                    self.latency.total_ms(),
-                                    self.engine.as_ref().map_or("off", |engine| {
-                                        match engine.info().mode {
-                                            LatencyMode::Exclusive => "exclusive",
-                                            LatencyMode::Shared => "shared",
-                                        }
-                                    }),
-                                    self.glitches
-                                )),
-                        )
+                        column.child(div().text_xs().text_color(fog()).child(format!(
+                            "{:.0} ms latency ({}), {} glitches",
+                            self.latency.total_ms(),
+                            self.engine.as_ref().map_or("off", |engine| {
+                                match engine.info().mode {
+                                    LatencyMode::Exclusive => "exclusive",
+                                    LatencyMode::Shared => "shared",
+                                }
+                            }),
+                            self.glitches
+                        )))
                     }),
             )
     }
 
-    fn render_block(&self, slot: usize, cx: &mut Context<Self>) -> impl IntoElement {
-        let block = &self.preset.blocks[slot];
-        let enabled = block.enabled;
-        let kind = block.kind;
-        let asset_kind = AssetKind::for_block(kind);
-        let asset_label = block
-            .asset
-            .as_ref()
-            .map(|asset| asset.name.clone())
-            .unwrap_or_else(|| match asset_kind {
-                Some(AssetKind::NamModel) => "No capture loaded".to_owned(),
-                _ => "No cab IR loaded".to_owned(),
-            });
-        let params = kind.params().len();
-        let knobs: Vec<_> = (0..params)
-            // A capture with one size has nothing for Quality to choose.
-            .filter(|&param| {
-                kind != BlockKind::Amp
-                    || param != AMP_QUALITY
-                    || self
-                        .amp_info
-                        .as_ref()
-                        .is_some_and(|amp| amp.quality_tiers > 1)
-            })
-            .map(|param| self.knob(slot, param, CARD_KNOB, cx))
-            .collect();
+    fn render_tones(&self, cx: &mut Context<Self>) -> impl IntoElement {
         v_flex()
-            .id(("block", slot))
-            .w(px(250.))
-            .gap_3()
-            .p_3()
-            .rounded_lg()
-            .border_1()
-            .border_color(if enabled { accent() } else { cx.theme().border })
-            .bg(cx.theme().secondary)
-            .child(
-                h_flex()
-                    .justify_between()
-                    .items_center()
-                    .child(div().font_semibold().child(kind.title()))
-                    .child(
-                        Button::new(("toggle", slot))
-                            .small()
-                            .label(if enabled { "On" } else { "Off" })
-                            .when(enabled, |button| button.primary())
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                this.toggle_block(slot, cx);
-                            })),
-                    ),
-            )
-            .when(asset_kind.is_some(), |card| {
-                card.child(
-                    v_flex()
-                        .gap_1()
-                        .child(
-                            div()
-                                .text_xs()
-                                .truncate()
-                                .text_color(cx.theme().muted_foreground)
-                                .child(asset_label),
-                        )
-                        .child(
-                            Button::new(("load", slot))
-                                .small()
-                                .outline()
-                                .label(match asset_kind {
-                                    Some(AssetKind::NamModel) => "Load .nam capture",
-                                    _ => "Load cab IR",
-                                })
-                                .on_click(cx.listener(move |this, _, window, cx| {
-                                    this.load_asset(slot, window, cx);
-                                })),
-                        ),
-                )
-            })
-            .child(
-                h_flex()
-                    .flex_wrap()
-                    .gap_2()
-                    .justify_around()
-                    .children(knobs),
-            )
-    }
-
-    fn render_chip(&self, text: impl Into<SharedString>, cx: &App) -> impl IntoElement {
-        div()
-            .px_2()
-            .py(px(2.))
-            .rounded_md()
-            .border_1()
-            .border_color(cx.theme().border)
-            .text_xs()
-            .text_color(cx.theme().muted_foreground)
-            .child(text.into())
-    }
-
-    fn render_amp_panel(&self, slot: usize, cx: &mut Context<Self>) -> impl IntoElement {
-        let block = &self.preset.blocks[slot];
-        let info = self.amp_info.as_ref();
-        let asset_name = block.asset.as_ref().map(|asset| asset.name.clone());
-        let title = info
-            .and_then(|info| info.name.clone().or_else(|| info.gear.clone()))
-            .or(asset_name)
-            .unwrap_or_else(|| "No amp loaded".to_owned());
-        let byline = info.and_then(|info| match (&info.gear, &info.modeled_by) {
-            (Some(gear), Some(by)) => Some(format!("{gear}, captured by {by}")),
-            (Some(gear), None) => Some(gear.clone()),
-            (None, Some(by)) => Some(format!("Captured by {by}")),
-            (None, None) => None,
-        });
-        let mut chips: Vec<AnyElement> = Vec::new();
-        if let Some(info) = info {
-            let kind = if info.quality_tiers > 1 {
-                format!("NAM A2, {} quality sizes", info.quality_tiers)
-            } else {
-                format!("NAM {}", info.architecture)
-            };
-            chips.push(self.render_chip(kind, cx).into_any_element());
-            if let Some(tone) = &info.tone_type {
-                chips.push(self.render_chip(tone.clone(), cx).into_any_element());
-            }
-            if info.includes_cab == Some(true) {
-                chips.push(self.render_chip("Cab in capture", cx).into_any_element());
-            }
-        }
-        let has_quality = info.is_some_and(|info| info.quality_tiers > 1);
-        let loaded = info.is_some();
-        let knobs: Vec<_> = (0..AMP_QUALITY + usize::from(has_quality))
-            .map(|param| self.knob(slot, param, AMP_KNOB, cx))
-            .collect();
-
-        v_flex()
-            .id("amp-panel")
-            .gap_4()
-            .p_5()
-            .rounded_lg()
-            .border_1()
-            .border_color(if block.enabled {
-                accent()
-            } else {
-                cx.theme().border
-            })
-            .bg(cx.theme().secondary)
-            .child(
-                h_flex()
-                    .justify_between()
-                    .items_start()
-                    .gap_3()
-                    .child(
-                        v_flex()
-                            .gap_1()
-                            .min_w_0()
-                            .child(div().text_2xl().font_semibold().child(title))
-                            .when_some(byline, |column, byline| {
-                                column.child(
-                                    div()
-                                        .text_sm()
-                                        .text_color(cx.theme().muted_foreground)
-                                        .child(byline),
-                                )
-                            }),
-                    )
-                    .child(
-                        Button::new("load-capture")
-                            .outline()
-                            .label(if loaded { "Change capture" } else { "Load .nam capture" })
-                            .on_click(cx.listener(move |this, _, window, cx| {
-                                this.load_asset(slot, window, cx);
-                            })),
-                    ),
-            )
-            .when(!chips.is_empty(), |panel| {
-                panel.child(h_flex().flex_wrap().gap_2().children(chips))
-            })
-            .when(!loaded, |panel| {
-                panel.child(
-                    div()
-                        .text_sm()
-                        .text_color(cx.theme().muted_foreground)
-                        .child("Load a capture to hear an amp. Until then the guitar passes through clean."),
-                )
-            })
-            .child(h_flex().flex_wrap().gap_6().justify_center().children(knobs))
-    }
-
-    fn render_signal_path(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let mut path: Vec<AnyElement> = Vec::new();
-        for (slot, block) in self.preset.blocks.iter().enumerate() {
-            if slot > 0 {
-                path.push(
-                    div()
-                        .w(px(16.))
-                        .h(px(1.))
-                        .bg(cx.theme().border)
-                        .into_any_element(),
-                );
-            }
-            path.push(
-                Button::new(("path", slot))
-                    .small()
-                    .label(block.kind.title())
-                    .when(block.enabled, |button| button.primary())
-                    .when(!block.enabled, |button| button.outline())
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        this.toggle_block(slot, cx);
-                    }))
-                    .into_any_element(),
-            );
-        }
-        h_flex().flex_wrap().items_center().gap_1().children(path)
-    }
-
-    fn render_amp_view(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let amp = self.slot_of(BlockKind::Amp);
-        let cab = self.slot_of(BlockKind::Cab);
-        let gate = self.slot_of(BlockKind::Gate);
-        let cab_doubled = cab.is_some_and(|cab| {
-            let cab = &self.preset.blocks[cab];
-            cab.enabled && cab.asset.is_some()
-        }) && self
-            .amp_info
-            .as_ref()
-            .is_some_and(|info| info.includes_cab == Some(true));
-
-        v_flex()
-            .gap_3()
-            .child(self.render_signal_path(cx))
-            .when_some(amp, |column, amp| {
-                column.child(self.render_amp_panel(amp, cx))
-            })
-            .when(cab_doubled, |column| {
-                column.child(
-                    div()
-                        .text_sm()
-                        .text_color(accent())
-                        .child("This capture already includes a cabinet, so you are hearing two. Turn off the Cabinet block."),
-                )
-            })
-            .child(
-                h_flex()
-                    .flex_wrap()
-                    .items_start()
-                    .gap_3()
-                    .when_some(gate, |row, gate| row.child(self.render_block(gate, cx)))
-                    .when_some(cab, |row, cab| row.child(self.render_block(cab, cx))),
-            )
-    }
-
-    fn render_rig_view(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let blocks: Vec<_> = (0..self.preset.blocks.len())
-            .map(|slot| self.render_block(slot, cx).into_any_element())
-            .collect();
-        v_flex()
-            .gap_3()
-            .child(self.render_signal_path(cx))
-            .child(h_flex().flex_wrap().items_start().gap_3().children(blocks))
-    }
-
-    fn render_library(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        v_flex()
-            .w(px(240.))
-            .h_full()
-            .flex_shrink_0()
+            .flex_1()
+            .min_h_0()
             .gap_2()
-            .p_3()
-            .border_r_1()
-            .border_color(cx.theme().border)
-            .child(div().font_semibold().child("Tone library"))
+            .pt_3()
+            .border_t_1()
+            .border_color(hairline())
+            .child(div().font_semibold().child("Tones"))
             .child(Input::new(&self.preset_name))
             .child(
                 Button::new("save")
@@ -916,7 +733,7 @@ impl Rig {
                     .child(
                         Button::new("export")
                             .small()
-                            .outline()
+                            .ghost()
                             .label("Export")
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.export_pack(window, cx);
@@ -925,7 +742,7 @@ impl Rig {
                     .child(
                         Button::new("import")
                             .small()
-                            .outline()
+                            .ghost()
                             .label("Import")
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.import_pack(window, cx);
@@ -934,7 +751,7 @@ impl Rig {
                     .child(
                         Button::new("folder")
                             .small()
-                            .outline()
+                            .ghost()
                             .label("Folder")
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.choose_library(window, cx);
@@ -963,63 +780,80 @@ impl Rig {
 }
 
 impl Render for Rig {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let body = match self.view {
-            View::Amp => self.render_amp_view(cx).into_any_element(),
-            View::Rig => self.render_rig_view(cx).into_any_element(),
+            View::Board => self.render_board_view(window, cx).into_any_element(),
             View::Practice => self.render_practice_view(cx).into_any_element(),
         };
-        v_flex()
+        div()
+            .relative()
             .size_full()
-            .bg(cx.theme().background)
+            .bg(hsla(0.42, 0.3, 0.035, 0.82))
             .text_color(cx.theme().foreground)
-            .child(self.render_device_bar(cx))
-            .when_some(self.error.clone(), |column, error| {
-                column.child(
-                    div()
-                        .px_3()
-                        .py_2()
-                        .text_sm()
-                        .text_color(cx.theme().danger)
-                        .child(error),
-                )
-            })
+            .child(self.render_backdrop())
             .child(
-                h_flex()
-                    .flex_1()
-                    .min_h_0()
-                    .items_start()
-                    .child(self.render_library(cx))
+                v_flex()
+                    .relative()
+                    .size_full()
+                    .child(self.render_device_bar(cx))
+                    .when_some(self.error.clone(), |column, error| {
+                        column.child(
+                            div()
+                                .px_3()
+                                .py_2()
+                                .text_sm()
+                                .text_color(cx.theme().danger)
+                                .child(error),
+                        )
+                    })
                     .child(
-                        v_flex()
-                            .id("main")
+                        h_flex()
                             .flex_1()
-                            .h_full()
-                            .overflow_y_scroll()
-                            .gap_3()
-                            .p_3()
+                            .min_h_0()
+                            .items_start()
                             .child(
-                                h_flex()
-                                    .gap_1()
-                                    .child(self.render_tab("tab-amp", "Amp", View::Amp, cx))
-                                    .child(self.render_tab("tab-rig", "Full rig", View::Rig, cx))
-                                    .child(self.render_tab(
-                                        "tab-practice",
-                                        "Practice",
-                                        View::Practice,
-                                        cx,
-                                    )),
+                                v_flex()
+                                    .w(px(232.))
+                                    .h_full()
+                                    .flex_shrink_0()
+                                    .gap_3()
+                                    .p_3()
+                                    .border_r_1()
+                                    .border_color(hairline())
+                                    .bg(pane())
+                                    .child(self.render_rack(cx))
+                                    .child(self.render_tones(cx)),
                             )
-                            .child(body)
                             .child(
-                                div()
-                                    .text_xs()
-                                    .text_color(cx.theme().muted_foreground)
+                                v_flex()
+                                    .id("main")
+                                    .flex_1()
+                                    .h_full()
+                                    .overflow_y_scroll()
+                                    .gap_4()
+                                    .p_4()
                                     .child(
+                                        h_flex()
+                                            .gap_1()
+                                            .child(self.render_tab(
+                                                "tab-board",
+                                                "Board",
+                                                View::Board,
+                                                cx,
+                                            ))
+                                            .child(self.render_tab(
+                                                "tab-practice",
+                                                "Practice",
+                                                View::Practice,
+                                                cx,
+                                            )),
+                                    )
+                                    .child(body)
+                                    .child(div().text_xs().text_color(fog()).child(
                                         "Hearing a clean signal under the amp? Turn off direct \
                                          monitoring on your interface, so only this app reaches \
                                          your speakers.",
-                                    ),
+                                    )),
                             ),
                     ),
             )

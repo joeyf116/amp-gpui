@@ -13,6 +13,8 @@ pub struct AmpInfo {
     pub modeled_by: Option<String>,
     pub gear: Option<String>,
     pub tone_type: Option<String>,
+    /// What was captured, as the file says, such as `amp` or `pedal`.
+    pub gear_type: Option<String>,
     /// Whether the capture already has a speaker cabinet in it. A cab block
     /// after one of these would be a second cabinet.
     pub includes_cab: Option<bool>,
@@ -49,6 +51,15 @@ impl NamAmp {
         }
     }
 
+    /// Reads what a `.nam` file says about itself, without preparing it to run.
+    pub fn inspect(path: &Path) -> Result<AmpInfo, DspError> {
+        let nam = NamModel::from_file(path)?;
+        let quality_tiers = Model::from_nam(&nam)?
+            .as_slimmable()
+            .map_or(1, |slimmable| slimmable.len());
+        Ok(capture_info(&nam, quality_tiers))
+    }
+
     /// Loads a `.nam` file. Must run off the audio thread.
     pub fn load(path: &Path, sample_rate: u32) -> Result<(Self, AmpInfo), DspError> {
         Self::from_nam(&NamModel::from_file(path)?, sample_rate)
@@ -76,25 +87,29 @@ impl NamAmp {
         model.process_buffer(&mut warmup);
         let quality_tiers = model.as_slimmable().map_or(1, |slimmable| slimmable.len());
         amp.model = Some(model);
+        Ok((amp, capture_info(nam, quality_tiers)))
+    }
+}
 
-        let gear = [
-            metadata.gear_make.as_deref(),
-            metadata.gear_model.as_deref(),
-        ]
-        .into_iter()
-        .flatten()
-        .collect::<Vec<_>>()
-        .join(" ");
-        let info = AmpInfo {
-            name: metadata.name.clone(),
-            modeled_by: metadata.modeled_by.clone(),
-            gear: (!gear.is_empty()).then_some(gear),
-            tone_type: metadata.tone_type.clone(),
-            includes_cab: nam.includes_cab(),
-            architecture: nam.architecture.clone(),
-            quality_tiers,
-        };
-        Ok((amp, info))
+fn capture_info(nam: &NamModel, quality_tiers: usize) -> AmpInfo {
+    let metadata = nam.metadata_typed();
+    let gear = [
+        metadata.gear_make.as_deref(),
+        metadata.gear_model.as_deref(),
+    ]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>()
+    .join(" ");
+    AmpInfo {
+        name: metadata.name.clone(),
+        modeled_by: metadata.modeled_by.clone(),
+        gear: (!gear.is_empty()).then_some(gear),
+        tone_type: metadata.tone_type.clone(),
+        gear_type: metadata.gear_type.clone(),
+        includes_cab: nam.includes_cab(),
+        architecture: nam.architecture.clone(),
+        quality_tiers,
     }
 }
 

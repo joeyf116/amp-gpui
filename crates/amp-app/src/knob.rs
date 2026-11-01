@@ -1,11 +1,7 @@
+use crate::style::{moss, moss_glow};
 use amp_dsp::ParamSpec;
 use gpui_kit::{component::ActiveTheme, *};
 use std::{f32::consts::PI, rc::Rc};
-
-/// The amber that marks anything live in the rig.
-pub fn accent() -> Hsla {
-    hsla(0.095, 0.92, 0.56, 1.0)
-}
 
 const SWEEP: f32 = 1.5 * PI;
 const START_ANGLE: f32 = 0.75 * PI;
@@ -72,7 +68,7 @@ fn arc(
     builder.build().ok()
 }
 
-fn disc(center: Point<Pixels>, radius: Pixels) -> Option<Path<Pixels>> {
+pub fn disc(center: Point<Pixels>, radius: Pixels) -> Option<Path<Pixels>> {
     let points: Vec<_> = (0..ARC_STEPS)
         .map(|step| point_at(center, radius, step as f32 * 2.0 * PI / ARC_STEPS as f32))
         .collect();
@@ -117,7 +113,12 @@ impl RenderOnce for Knob {
                 if amount > 0.0
                     && let Some(path) = arc(center, outer, START_ANGLE, needle, px(4.0))
                 {
-                    window.paint_path(path, accent());
+                    window.paint_path(path, moss());
+                }
+                if amount > 0.0
+                    && let Some(path) = arc(center, outer, START_ANGLE, needle, px(8.0))
+                {
+                    window.paint_path(path, moss_glow(0.14));
                 }
                 let inner = outer - px(8.0);
                 if let Some(path) = disc(center, inner) {

@@ -10,6 +10,11 @@ use std::{
 
 const COMMAND_CAPACITY: usize = 256;
 const RETIRED_CAPACITY: usize = 16;
+/// How long a chain swap crossfades, in samples. Long enough that editing the
+/// chain mid-note doesn't click, short enough to feel instant.
+const FADE_FRAMES: usize = 240;
+/// The longest block that gets a crossfade. The engine sends far less.
+const FADE_SCRATCH: usize = 4_096;
 
 /// A change from the UI, applied between audio blocks.
 pub enum Command {
@@ -134,7 +139,15 @@ pub struct Processor {
     /// A chain waiting for room in `retired`. Dropping it here would free
     /// memory on the audio thread, so it waits until the queue has space.
     pending_retire: Option<Box<Chain>>,
+    fade: Option<Fade>,
+    fade_scratch: Vec<f32>,
     meters: Arc<Meters>,
+}
+
+/// The outgoing chain, still running while the new one fades in.
+struct Fade {
+    chain: Box<Chain>,
+    position: usize,
 }
 
 pub fn processor(chain: Box<Chain>) -> (Processor, Controller) {
@@ -147,6 +160,8 @@ pub fn processor(chain: Box<Chain>) -> (Processor, Controller) {
             commands: command_rx,
             retired: retired_tx,
             pending_retire: None,
+            fade: None,
+            fade_scratch: vec![0.0; FADE_SCRATCH],
             meters: meters.clone(),
         },
         Controller {
@@ -161,7 +176,12 @@ impl Processor {
     pub fn process(&mut self, buffer: &mut [f32]) {
         self.apply_commands();
         Meters::raise(&self.meters.input_peak, peak(buffer));
+        let faded = buffer.len().min(FADE_SCRATCH);
+        if self.fade.is_some() {
+            self.fade_scratch[..faded].copy_from_slice(&buffer[..faded]);
+        }
         self.chain.process(buffer);
+        self.mix_in_fade(&mut buffer[..faded]);
         for sample in buffer.iter_mut() {
             *sample = sample.clamp(-1.0, 1.0);
         }
@@ -186,9 +206,33 @@ impl Processor {
                 }
                 Command::SetChain(chain) => {
                     let old = std::mem::replace(&mut self.chain, chain);
-                    self.retire(old);
+                    if let Some(fade) = self.fade.take() {
+                        self.retire(fade.chain);
+                    }
+                    self.fade = Some(Fade {
+                        chain: old,
+                        position: 0,
+                    });
                 }
             }
+        }
+    }
+
+    fn mix_in_fade(&mut self, buffer: &mut [f32]) {
+        let Some(fade) = &mut self.fade else {
+            return;
+        };
+        let old = &mut self.fade_scratch[..buffer.len()];
+        fade.chain.process(old);
+        for (sample, old) in buffer.iter_mut().zip(old.iter()) {
+            let new_gain = (fade.position as f32 / FADE_FRAMES as f32).min(1.0);
+            *sample = *sample * new_gain + *old * (1.0 - new_gain);
+            fade.position += 1;
+        }
+        if fade.position >= FADE_FRAMES
+            && let Some(fade) = self.fade.take()
+        {
+            self.retire(fade.chain);
         }
     }
 
@@ -249,7 +293,7 @@ mod tests {
     fn hands_the_old_chain_back_to_the_ui_thread() {
         let (mut processor, mut controller) = processor(scale_chain(1.0));
         assert!(controller.send(Command::SetChain(scale_chain(0.5))).is_ok());
-        processor.process(&mut [0.0]);
+        processor.process(&mut [0.0; FADE_FRAMES]);
         assert_eq!(controller.retired.slots(), 1);
         controller.drop_retired();
         assert_eq!(controller.retired.slots(), 0);
@@ -263,12 +307,27 @@ mod tests {
         }
         processor.process(&mut [0.0]);
         assert!(processor.pending_retire.is_some());
-        controller.drop_retired();
-        processor.process(&mut [0.0]);
-        controller.drop_retired();
-        processor.process(&mut [0.0]);
+        for _ in 0..4 {
+            controller.drop_retired();
+            processor.process(&mut [0.0; FADE_FRAMES]);
+        }
         assert!(processor.pending_retire.is_none());
+        assert!(processor.fade.is_none());
         assert_eq!(processor.commands.slots(), 0);
+    }
+
+    #[test]
+    fn a_chain_swap_fades_instead_of_jumping() {
+        let (mut processor, mut controller) = processor(scale_chain(1.0));
+        assert!(controller.send(Command::SetChain(scale_chain(0.0))).is_ok());
+        let mut buffer = [0.5; FADE_FRAMES + 8];
+        processor.process(&mut buffer);
+        assert_eq!(buffer[0], 0.5);
+        let largest_step = buffer
+            .windows(2)
+            .fold(0.0_f32, |step, pair| step.max((pair[0] - pair[1]).abs()));
+        assert!(largest_step < 0.01, "jumped by {largest_step}");
+        assert_eq!(buffer[FADE_FRAMES + 7], 0.0);
     }
 
     #[test]

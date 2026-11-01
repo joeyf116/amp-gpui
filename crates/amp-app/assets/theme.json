@@ -1,0 +1,50 @@
+{
+  "$schema": "https://github.com/longbridge/gpui-kit/raw/refs/heads/main/.theme-schema.json",
+  "name": "Understory",
+  "author": "amp-gpui",
+  "themes": [
+    {
+      "is_default": true,
+      "name": "Understory",
+      "mode": "dark",
+      "radius": 6,
+      "radius.lg": 10,
+      "shadow": false,
+      "colors": {
+        "background": "#080d0b",
+        "foreground": "#dbe7df",
+        "border": "#7ea89224",
+        "ring": "#7fd6a0",
+        "caret": "#7fd6a0",
+        "overlay": "#04070680",
+        "window.border": "#7ea89224",
+        "accent.background": "#16221c",
+        "accent.foreground": "#dbe7df",
+        "muted.background": "#16221c",
+        "muted.foreground": "#7f9488",
+        "primary.background": "#7fd6a0",
+        "primary.hover.background": "#94e2b2",
+        "primary.active.background": "#68c08a",
+        "primary.foreground": "#06100b",
+        "secondary.background": "#0f1814",
+        "secondary.hover.background": "#16221c",
+        "secondary.active.background": "#1d2c25",
+        "secondary.foreground": "#dbe7df",
+        "success.background": "#7fd6a0",
+        "success.foreground": "#06100b",
+        "warning.background": "#d6b36f",
+        "warning.foreground": "#06100b",
+        "danger.background": "#c9675c",
+        "danger.foreground": "#0b0605",
+        "info.background": "#6fb6c9",
+        "info.foreground": "#06100b",
+        "input.border": "#7ea89233",
+        "link.foreground": "#7fd6a0",
+        "link.hover.foreground": "#94e2b2",
+        "link.active.foreground": "#68c08a",
+        "popover.background": "#0c1411",
+        "popover.foreground": "#dbe7df"
+      }
+    }
+  ]
+}

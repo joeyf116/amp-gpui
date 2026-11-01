@@ -1,16 +1,27 @@
+mod art;
 mod knob;
 mod rig;
 mod settings;
+mod style;
 
 use gpui_kit::{
-    component::{Theme, ThemeMode},
+    component::{Theme, ThemeMode, ThemeSet},
     *,
 };
+use std::rc::Rc;
+
+const THEME: &str = include_str!("../assets/theme.json");
 use rig::Rig;
 
 fn main() {
     gpui_kit::application().run(|cx| {
         gpui_kit::init(cx);
+        let themes: ThemeSet = serde_json::from_str(THEME).expect("the bundled theme is valid");
+        Theme::update(cx, |theme| {
+            for config in themes.themes {
+                theme.dark_theme = Rc::new(config);
+            }
+        });
         Theme::change(ThemeMode::Dark, None, cx);
         cx.on_window_closed(|cx, _| {
             if cx.windows().is_empty() {
@@ -24,7 +35,8 @@ fn main() {
                 ..Default::default()
             }),
             window_bounds: Some(WindowBounds::centered(size(px(1280.), px(800.)), cx)),
-            window_min_size: Some(size(px(960.), px(600.))),
+            window_min_size: Some(size(px(1080.), px(640.))),
+            window_background: WindowBackgroundAppearance::Blurred,
             ..Default::default()
         };
         if let Err(error) =
