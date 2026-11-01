@@ -470,25 +470,39 @@ impl Rig {
         .detach();
     }
 
-    /// Adds a `.nam` file to the rack.
-    fn add_capture(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.pick_path(false, "Add capture", window, cx, |this, path, _, cx| {
-            let library = this.library.clone();
-            cx.spawn(async move |this, cx| {
-                let task = cx
-                    .background_executor()
-                    .spawn(async move { library.add_capture(&path) });
-                let result = task.await;
-                let _ = this.update(cx, |this, cx| {
-                    match result {
-                        Ok(_) => this.refresh_catalog(),
-                        Err(error) => this.error = Some(error.to_string().into()),
-                    }
-                    cx.notify();
-                });
-            })
-            .detach();
+    /// Adds `.nam` files to the rack. One bad file shouldn't stop the rest of a
+    /// batch, so the first error is shown after everything else is in.
+    fn add_captures(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let paths = cx.prompt_for_paths(PathPromptOptions {
+            files: true,
+            directories: false,
+            multiple: true,
+            prompt: Some("Add captures".into()),
         });
+        let library = self.library.clone();
+        cx.spawn_in(window, async move |this, cx| {
+            let Ok(Ok(Some(paths))) = paths.await else {
+                return;
+            };
+            let task = cx.background_executor().spawn(async move {
+                let mut first_error = None;
+                for path in paths {
+                    if let Err(error) = library.add_capture(&path) {
+                        first_error.get_or_insert(error.to_string());
+                    }
+                }
+                first_error
+            });
+            let error = task.await;
+            let _ = this.update(cx, |this, cx| {
+                this.refresh_catalog();
+                if let Some(error) = error {
+                    this.error = Some(error.into());
+                }
+                cx.notify();
+            });
+        })
+        .detach();
     }
 
     fn load_cab_ir(&mut self, slot: usize, window: &mut Window, cx: &mut Context<Self>) {

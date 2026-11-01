@@ -19,6 +19,7 @@ use gpui_kit::{
     *,
 };
 
+const TONE3000_URL: &str = "https://www.tone3000.com";
 const GAP: f32 = 22.0;
 const SETTINGS_KNOB: Pixels = px(72.);
 const BUILT_IN: [BlockKind; 4] = [
@@ -559,9 +560,16 @@ impl Rig {
                             .outline()
                             .label("Add .nam")
                             .on_click(cx.listener(|this, _, window, cx| {
-                                this.add_capture(window, cx);
+                                this.add_captures(window, cx);
                             })),
                     ),
+            )
+            .child(
+                Button::new("browse-tone3000")
+                    .small()
+                    .ghost()
+                    .label("Browse TONE3000")
+                    .on_click(|_, _, cx| cx.open_url(TONE3000_URL)),
             )
             .when(empty, |rack| {
                 rack.child(
@@ -569,7 +577,7 @@ impl Rig {
                         .mt_2()
                         .text_xs()
                         .text_color(fog())
-                        .child("Add NAM captures here, then drag them onto the board."),
+                        .child("Download captures from TONE3000, add them here, then drag them onto the board."),
                 )
             })
             .when(!amp_items.is_empty(), |rack| {
