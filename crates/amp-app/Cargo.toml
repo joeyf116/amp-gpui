@@ -17,6 +17,7 @@ asio = ["amp-engine/asio"]
 amp-dsp.workspace = true
 amp-engine.workspace = true
 amp-preset.workspace = true
+amp-tone3000.workspace = true
 directories.workspace = true
 gpui-kit.workspace = true
 serde.workspace = true

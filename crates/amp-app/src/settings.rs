@@ -34,7 +34,7 @@ pub struct Settings {
 
 /// `AMP_GPUI_DATA` points the app at another folder, which keeps test runs away
 /// from a real library.
-fn data_dir() -> PathBuf {
+pub fn data_dir() -> PathBuf {
     if let Some(path) = std::env::var_os("AMP_GPUI_DATA") {
         return path.into();
     }

@@ -3,6 +3,7 @@ mod board;
 mod explorer;
 mod header;
 mod practice;
+mod tone3000;
 mod tuner;
 
 use crate::{knob::Knob, settings::Settings};
@@ -28,6 +29,7 @@ use gpui_kit::{
 };
 use practice::Practice;
 use std::{path::PathBuf, time::Duration};
+use tone3000::Tone3000;
 
 const METER_INTERVAL: Duration = Duration::from_millis(50);
 const METER_FLOOR_DB: f32 = -60.0;
@@ -130,6 +132,7 @@ enum Overlay {
     None,
     Tones,
     Audio,
+    Tone3000,
 }
 
 #[derive(Clone)]
@@ -211,6 +214,7 @@ pub struct Rig {
     practice: Practice,
     overlay: Overlay,
     explorer: Explorer,
+    tone3000: Tone3000,
     gear_open: bool,
 
     selected: Option<usize>,
@@ -350,6 +354,7 @@ impl Rig {
             practice: Practice::default(),
             overlay: Overlay::None,
             explorer,
+            tone3000: Tone3000::new(),
             gear_open: false,
             selected: None,
             hover_gap: None,
@@ -693,6 +698,7 @@ impl Rig {
 
     fn adopt_chain(&mut self, built: amp_preset::BuiltChain, cx: &mut Context<Self>) {
         self.captures = built.captures;
+        self.want_block_images(cx);
         self.error = None;
         if let Some(engine) = &mut self.engine {
             engine.send(Command::SetChain(Box::new(built.chain)));
@@ -713,6 +719,9 @@ impl Rig {
     /// Builds `preset` in the background and only adopts it if every model
     /// loads, so a bad file leaves the tone playing as it was.
     fn load_preset(&mut self, preset: Preset, window: &mut Window, cx: &mut Context<Self>) {
+        if self.restore_tone_models(&preset, window, cx) {
+            return;
+        }
         self.build += 1;
         let build = self.build;
         let library = self.library.clone();
@@ -1028,6 +1037,9 @@ impl Render for Rig {
                             })
                             .when(self.overlay == Overlay::Audio, |main| {
                                 main.child(self.render_audio_panel(cx))
+                            })
+                            .when(self.overlay == Overlay::Tone3000, |main| {
+                                main.child(self.render_tone3000(cx))
                             }),
                     )
                     .child(self.render_footer(cx)),

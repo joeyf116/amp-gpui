@@ -18,4 +18,4 @@ pub use catalog::{CaptureEntry, CaptureKind};
 pub use factory::factory_tones;
 pub use library::{Library, LibraryError, PresetEntry};
 pub use practice::{PracticeSection, PracticeSheet};
-pub use preset::{AssetKind, AssetRef, BlockPreset, Preset, SCHEMA_VERSION};
+pub use preset::{AssetKind, AssetRef, BlockPreset, Preset, SCHEMA_VERSION, ToneOrigin};

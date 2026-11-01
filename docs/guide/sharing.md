@@ -5,7 +5,8 @@ can share it any way you share files. There are two ways to do it.
 
 ## Share one tone: tone packs
 
-A tone pack is a folder with one tone and the files it needs.
+A tone pack is a folder with one tone and the files it needs. Files from
+[TONE3000](tone3000.md#sharing-tones-that-use-them) stay out of it.
 
 **To export,** load the tone, press **Export** under the tone list, and choose an
 empty folder. Zip that folder and send it however you like.

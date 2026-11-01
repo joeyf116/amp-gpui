@@ -133,12 +133,15 @@ impl Library {
     }
 
     /// Writes a tone pack for `preset` to `destination`: a small library with
-    /// just this preset and the files it needs.
+    /// just this preset and the files it needs. TONE3000's terms don't allow
+    /// passing its files on, so those stay behind and the preset keeps a
+    /// reference, which each person's own account downloads again.
     pub fn export_pack(&self, preset: &Preset, destination: &Path) -> Result<(), LibraryError> {
         let pack = Self::open(destination)?;
         for asset in preset
             .blocks
             .iter()
+            .filter(|block| block.origin.is_none())
             .filter_map(|block| block.asset.as_ref())
         {
             fs::copy(self.asset_path(asset)?, pack.stored_path(asset)?)?;
@@ -162,6 +165,7 @@ impl Library {
             presets
                 .iter()
                 .flat_map(|preset| &preset.blocks)
+                .filter(|block| block.origin.is_none())
                 .filter_map(|block| block.asset.as_ref())
         };
         for asset in assets() {
@@ -237,6 +241,7 @@ pub(crate) fn slug(name: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ToneOrigin;
     use amp_dsp::BlockKind;
     use std::sync::atomic::{AtomicU32, Ordering};
 
@@ -330,6 +335,32 @@ mod tests {
             fs::read(theirs.asset_path(asset).unwrap()).unwrap(),
             b"model bytes"
         );
+    }
+
+    #[test]
+    fn a_pack_leaves_tone3000_files_behind_but_keeps_the_reference() {
+        let directory = TempDir::new();
+        let mine = Library::open(directory.0.join("mine")).unwrap();
+        let theirs = Library::open(directory.0.join("theirs")).unwrap();
+        let mut preset = preset_with_asset(&mine, &directory.0);
+        let amp = &mut preset.blocks[2];
+        amp.origin = Some(ToneOrigin {
+            tone_id: 7,
+            ..ToneOrigin::default()
+        });
+        let asset = amp.asset.clone().unwrap();
+        let pack = directory.0.join("pack");
+        mine.export_pack(&preset, &pack).unwrap();
+
+        assert_eq!(fs::read_dir(pack.join(ASSETS)).unwrap().count(), 0);
+        assert_eq!(
+            theirs.import_pack(&pack).unwrap(),
+            std::slice::from_ref(&preset)
+        );
+        assert!(matches!(
+            theirs.asset_path(&asset),
+            Err(LibraryError::MissingAsset { .. })
+        ));
     }
 
     #[test]

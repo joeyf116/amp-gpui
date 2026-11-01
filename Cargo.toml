@@ -11,24 +11,31 @@ publish = false
 amp-dsp = { path = "crates/amp-dsp" }
 amp-engine = { path = "crates/amp-engine" }
 amp-preset = { path = "crates/amp-preset" }
+amp-tone3000 = { path = "crates/amp-tone3000" }
 
+base64 = "0.22.1"
 cpal = "0.18.2"
 directories = "6.0.0"
 fft-convolver = "0.4.0"
+getrandom = "0.3.4"
 gpui-kit = "=0.8.0"
 hound = "3.5.1"
+image = "0.25.10"
 nam-rs = "0.4.0"
 rtrb = "0.4.1"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 sha2 = "0.10"
 thiserror = "2"
+ureq = { version = "3", features = ["json"] }
+url = "2.5.8"
 windows = { version = "0.62", features = [
     "Win32_Foundation",
     "Win32_Media_Audio",
     "Win32_Media_KernelStreaming",
     "Win32_Media_Multimedia",
     "Win32_Security",
+    "Win32_Security_Cryptography",
     "Win32_System_Com",
     "Win32_System_Threading",
 ] }

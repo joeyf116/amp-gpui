@@ -1,4 +1,4 @@
-use crate::{AssetKind, AssetRef, Library, LibraryError, library::write_json};
+use crate::{AssetKind, AssetRef, Library, LibraryError, ToneOrigin, library::write_json};
 use amp_dsp::{AmpInfo, NamAmp};
 use serde::{Deserialize, Serialize};
 use std::{fs, path::Path};
@@ -25,6 +25,8 @@ pub struct CaptureEntry {
     pub tone_type: Option<String>,
     #[serde(default)]
     pub quality_tiers: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin: Option<ToneOrigin>,
 }
 
 impl CaptureEntry {
@@ -48,6 +50,7 @@ impl CaptureEntry {
             gear: info.gear,
             tone_type: info.tone_type,
             quality_tiers: info.quality_tiers,
+            origin: None,
         }
     }
 }
@@ -69,8 +72,28 @@ impl Library {
     pub fn add_capture(&self, source: &Path) -> Result<CaptureEntry, LibraryError> {
         let info = NamAmp::inspect(source)?;
         let asset = self.import_asset(AssetKind::NamModel, source)?;
-        let entry = CaptureEntry::new(asset, info);
+        self.list_capture(CaptureEntry::new(asset, info))
+    }
 
+    /// Adds a downloaded model, titled and credited as it was published rather
+    /// than by what the file says about itself. `kind` comes from the tone too,
+    /// which knows better than a file with no metadata.
+    pub fn add_tone_capture(
+        &self,
+        source: &Path,
+        kind: CaptureKind,
+        origin: ToneOrigin,
+    ) -> Result<CaptureEntry, LibraryError> {
+        let info = NamAmp::inspect(source)?;
+        let asset = self.import_asset(AssetKind::NamModel, source)?;
+        let mut entry = CaptureEntry::new(asset, info);
+        entry.title = origin.title.clone();
+        entry.kind = kind;
+        entry.origin = Some(origin);
+        self.list_capture(entry)
+    }
+
+    fn list_capture(&self, entry: CaptureEntry) -> Result<CaptureEntry, LibraryError> {
         let mut entries = self.captures()?;
         entries.retain(|existing| existing.asset.sha256 != entry.asset.sha256);
         entries.push(entry.clone());
@@ -125,6 +148,29 @@ mod tests {
         assert_eq!(entries[0].title, "Mid Drive");
         assert_eq!(entries[1].kind, CaptureKind::Amp);
         assert_eq!(entries[1].title, "Test Head");
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn a_downloaded_capture_keeps_its_published_title_and_credit() {
+        let directory =
+            std::env::temp_dir().join(format!("amp-catalog-tone-{}", std::process::id()));
+        let library = Library::open(directory.join("library")).unwrap();
+        let file = directory.join("model.nam");
+        fs::write(&file, capture_json(r#"{"name":"Whatever the file says"}"#)).unwrap();
+        let origin = ToneOrigin {
+            tone_id: 7,
+            title: "Plexi 51".into(),
+            creator: "brucew".into(),
+            ..ToneOrigin::default()
+        };
+
+        let entry = library
+            .add_tone_capture(&file, CaptureKind::Pedal, origin.clone())
+            .unwrap();
+        assert_eq!(entry.title, "Plexi 51");
+        assert_eq!(entry.kind, CaptureKind::Pedal);
+        assert_eq!(library.captures().unwrap()[0].origin, Some(origin));
         fs::remove_dir_all(directory).unwrap();
     }
 

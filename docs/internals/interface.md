@@ -10,7 +10,8 @@ The window has four bands, and the code for each lives under
 | Stage | The selected unit up close, its details, and the gear drawer | `board.rs` |
 | Footer | Audio status, Audio setup, Tuner, and view tabs | `audio.rs` |
 
-The Tone Explorer (`explorer.rs`) and Audio setup (`audio.rs`) open over the stage.
+The Tone Explorer (`explorer.rs`), the TONE3000 panel (`tone3000.rs`), and Audio
+setup (`audio.rs`) open over the stage.
 Which one is open is held in `Overlay`, and ++esc++ closes it. Monitor stays in the
 header because live playing is what the app is for. Devices fold away because they
 are set once.
@@ -24,6 +25,29 @@ The shelves are filtered in `visible`, which has tests of its own. Tags come fro
 tones themselves. Favorites and recent tones are stored by name in `settings.json`,
 not in the tone files, so sharing a tone doesn't share your favorites. A renamed tone
 leaves those lists.
+
+## TONE3000
+
+`crates/amp-tone3000` is the API client, and `rig/tone3000.rs` is its UI. Sign-in is
+OAuth with PKCE in the system browser, returning to a listener on
+`http://127.0.0.1:53710/callback`. The app holds only the publishable key. The secret
+key is for servers and must never enter this repo. Tokens are sealed with DPAPI in
+`tone3000.tokens` beside `settings.json`. Refresh tokens rotate, so each new pair is
+saved at once. `AMP_GPUI_TONE3000` points the client at a test server.
+
+Keep to these rules when changing it, because access can be revoked without them:
+
+- The [design requirements](https://www.tone3000.com/api#design-requirements) set
+  what each screen shows: the splash before sign-in, the fields on tone lists and
+  details, the marked chain block, and the full logo appearing before the T3K mark.
+- The [API terms](https://www.tone3000.com/api/terms) bar bulk downloads, caching the
+  catalog, and bundling or passing on its files, and require keeping creator credit,
+  so a model downloads only when someone picks it, and `ToneOrigin` travels with it.
+- The free tier covers the Select flow and the bounded lists, so there's no search
+  or catalog browser of our own. Selling the app needs a commercial agreement first.
+
+The logos in `assets/tone3000/` are TONE3000's own files, used as they ship. They
+are the one exception to the rule below about other companies' logos.
 
 ## How the gear art is made
 

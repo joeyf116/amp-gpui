@@ -16,6 +16,7 @@ nav = [
     { "Monitoring and latency" = "guide/monitoring.md" },
     { "Load and save tones" = "guide/tones.md" },
     { "Build a rig" = "guide/board.md" },
+    { "Find tones on TONE3000" = "guide/tone3000.md" },
     { "Generate a tone" = "guide/generate.md" },
     { "Share tones" = "guide/sharing.md" },
     { "Practice and tune" = "guide/practice.md" },

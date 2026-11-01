@@ -26,6 +26,8 @@ pub struct BlockPreset {
     pub params: BTreeMap<String, f32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub asset: Option<AssetRef>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin: Option<ToneOrigin>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -61,6 +63,26 @@ pub struct AssetRef {
     pub name: String,
 }
 
+/// Where a downloaded model came from. It keeps the creator's credit with the
+/// model, and lets a preset that travels without the file fetch it again.
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ToneOrigin {
+    pub tone_id: u64,
+    pub model_id: u64,
+    pub title: String,
+    pub model: String,
+    /// As shown on the site, such as `Amp + Cab`.
+    pub gear: String,
+    pub format: String,
+    pub creator: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub creator_avatar: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub license: Option<String>,
+}
+
 impl BlockPreset {
     pub fn new(kind: BlockKind, enabled: bool) -> Self {
         Self {
@@ -72,6 +94,7 @@ impl BlockPreset {
                 .map(|spec| (spec.id.to_owned(), spec.default))
                 .collect(),
             asset: None,
+            origin: None,
         }
     }
 
@@ -124,5 +147,13 @@ mod tests {
         block.params.insert("mix".into(), 900.0);
         assert_eq!(block.param(0), 380.0);
         assert_eq!(block.param(2), 100.0);
+    }
+
+    #[test]
+    fn presets_from_before_tone_origins_still_load() {
+        let block = BlockPreset::new(BlockKind::Amp, true);
+        let json = serde_json::to_string(&block).unwrap();
+        assert!(!json.contains("origin"));
+        assert_eq!(serde_json::from_str::<BlockPreset>(&json).unwrap(), block);
     }
 }

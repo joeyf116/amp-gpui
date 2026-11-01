@@ -40,6 +40,7 @@ cargo run -p amp-engine --example device_check -- --run --input "Mic 1" --output
 | `amp-dsp` | Blocks and the chain: gate, drive, NAM amp, IR cab, delay | Audio thread |
 | `amp-engine` | Devices, resampling, clock drift, UI to audio messaging | Audio thread and UI thread |
 | `amp-preset` | Preset format, tone library, tone packs | Background threads |
+| `amp-tone3000` | TONE3000 sign-in, tone lists, downloads | Background threads |
 | `amp-app` | The GPUI interface | UI thread |
 
 ## How the audio path works

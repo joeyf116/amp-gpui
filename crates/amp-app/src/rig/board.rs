@@ -47,7 +47,7 @@ const BUILT_IN: [BlockKind; 8] = [
 #[derive(Clone)]
 pub(super) enum Gear {
     BuiltIn(BlockKind),
-    Capture(CaptureEntry),
+    Capture(Box<CaptureEntry>),
 }
 
 impl Gear {
@@ -61,6 +61,7 @@ impl Gear {
                 };
                 let mut block = BlockPreset::new(kind, true);
                 block.asset = Some(capture.asset.clone());
+                block.origin = capture.origin.clone();
                 block
             }
         }
@@ -81,7 +82,11 @@ fn block_art(block: &BlockPreset, name: Option<&str>) -> GearArt {
             .rsplit_once('.')
             .map_or(asset.name.as_str(), |(stem, _)| stem)
     });
-    let title = name
+    let title = block
+        .origin
+        .as_ref()
+        .map(|origin| origin.title.as_str())
+        .or(name)
         .or(asset_name)
         .unwrap_or(art::model_name(block.kind))
         .to_owned();
@@ -124,6 +129,14 @@ fn step_selection(current: Option<usize>, step: isize, count: isize) -> usize {
     (start + step).rem_euclid(count) as usize
 }
 
+/// Where a new block goes: ahead of the first unit that usually follows it.
+pub(super) fn place_after(rig: &Rig, block: &BlockPreset) -> usize {
+    let rank = block_art(block, None).shape.rank();
+    (0..rig.preset.blocks.len())
+        .find(|slot| rig.shape_of(*slot).rank() > rank)
+        .unwrap_or(rig.preset.blocks.len())
+}
+
 /// Where `moved` lands once it is taken out of the chain, for a drop in `gap`.
 fn landing(moved: usize, gap: usize) -> usize {
     if gap > moved { gap - 1 } else { gap }
@@ -142,7 +155,7 @@ impl Rig {
         }
     }
 
-    fn insert_block(&mut self, block: BlockPreset, slot: usize, cx: &mut Context<Self>) {
+    pub(super) fn insert_block(&mut self, block: BlockPreset, slot: usize, cx: &mut Context<Self>) {
         self.remember();
         let slot = slot.min(self.preset.blocks.len());
         self.preset.blocks.insert(slot, block);
@@ -174,11 +187,8 @@ impl Rig {
 
     /// Double-clicking in the rack places gear where it usually goes.
     fn place_block(&mut self, gear: &Gear, cx: &mut Context<Self>) {
-        let rank = gear.art().shape.rank();
-        let slot = (0..self.preset.blocks.len())
-            .find(|slot| self.shape_of(*slot).rank() > rank)
-            .unwrap_or(self.preset.blocks.len());
-        self.insert_block(gear.block(), slot, cx);
+        let block = gear.block();
+        self.insert_block(block.clone(), place_after(self, &block), cx);
     }
 
     fn shape_of(&self, slot: usize) -> Shape {
@@ -227,6 +237,7 @@ impl Rig {
     }
 
     pub(super) fn close_overlay(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.cancel_sign_in();
         self.overlay = Overlay::None;
         self.focus.focus(window, cx);
         cx.notify();
@@ -328,6 +339,7 @@ impl Rig {
         let selected = self.selected == Some(slot);
         let enabled = block.enabled;
         let is_stomp = art.shape.is_stomp();
+        let badge = block.origin.as_ref().map(|origin| self.tone_badge(origin));
         let drag = BoardDrag {
             source: DragSource::Board(slot),
             art: art.clone(),
@@ -357,25 +369,29 @@ impl Rig {
                 this.focus.focus(window, cx);
                 cx.notify();
             }))
-            .child(div().h(px(UNIT_SLOT)).flex().items_center().child(
-                art::thumb(&art, enabled).when(is_stomp, |unit| {
-                    // The footswitch works like a real one: press it to bypass.
-                    unit.child(
-                        div()
-                            .id(("footswitch", slot))
-                            .absolute()
-                            .bottom_0()
-                            .left_0()
-                            .right_0()
-                            .h(relative(FOOTSWITCH_SHARE))
-                            .cursor_pointer()
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                cx.stop_propagation();
-                                this.toggle_block(slot, cx);
-                            })),
-                    )
-                }),
-            ))
+            .child(
+                div().h(px(UNIT_SLOT)).flex().items_center().child(
+                    art::thumb(&art, enabled)
+                        .when(is_stomp, |unit| {
+                            // The footswitch works like a real one: press it to bypass.
+                            unit.child(
+                                div()
+                                    .id(("footswitch", slot))
+                                    .absolute()
+                                    .bottom_0()
+                                    .left_0()
+                                    .right_0()
+                                    .h(relative(FOOTSWITCH_SHARE))
+                                    .cursor_pointer()
+                                    .on_click(cx.listener(move |this, _, _, cx| {
+                                        cx.stop_propagation();
+                                        this.toggle_block(slot, cx);
+                                    })),
+                            )
+                        })
+                        .children(badge),
+                ),
+            )
             .child(
                 div()
                     .max_w(px(112.))
@@ -451,6 +467,16 @@ impl Rig {
                     .flex_shrink_0()
                     .gap_1()
                     .child(
+                        Button::new("browse-tones")
+                            .small()
+                            .ghost()
+                            .label("Browse tones")
+                            .tooltip("Find a tone on TONE3000")
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.open_tone3000(None, cx);
+                            })),
+                    )
+                    .child(
                         Button::new("add-gear")
                             .small()
                             .when(self.gear_open, |button| button.outline())
@@ -495,6 +521,23 @@ impl Rig {
                 .flatten()
                 .any(|info| info.includes_cab == Some(true));
         let is_cab = matches!(art.shape, Shape::Cabinet { .. });
+        let takes_tone = matches!(
+            kind,
+            BlockKind::Amp | BlockKind::Pedal | BlockKind::Cab | BlockKind::Tube
+        );
+        let credit = block
+            .origin
+            .as_ref()
+            .map(|origin| self.render_tone_credit(origin, cx).into_any_element());
+        let browse = takes_tone.then(|| {
+            Button::new("browse-block-tones")
+                .small()
+                .outline()
+                .label("Browse tones")
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    this.open_tone3000(Some(slot), cx);
+                }))
+        });
         let last = self.preset.blocks.len() - 1;
         let move_button = |id, label, to: usize, disabled: bool, cx: &mut Context<Self>| {
             Button::new(id)
@@ -550,9 +593,11 @@ impl Rig {
                     "One of your captures already includes a cabinet, so you may be hearing two.",
                 ))
             })
+            .children(credit)
             .child(
                 v_flex()
                     .gap_1()
+                    .children(browse)
                     .when(
                         AssetKind::for_block(kind) == Some(AssetKind::ImpulseResponse),
                         |column| {
@@ -720,6 +765,13 @@ impl Rig {
 
     fn render_rack_item(&self, id: usize, gear: Gear, cx: &mut Context<Self>) -> impl IntoElement {
         let art = gear.art();
+        let credit = match &gear {
+            Gear::Capture(capture) => capture
+                .origin
+                .as_ref()
+                .map(|origin| format!("{}, by {}", origin.model, origin.creator)),
+            Gear::BuiltIn(_) => None,
+        };
         let drag = BoardDrag {
             source: DragSource::Rack(gear.clone()),
             art: art.clone(),
@@ -738,6 +790,9 @@ impl Rig {
                     .text_color(fog())
                     .child(art.type_label.clone()),
             )
+            .when_some(credit, |item, credit| {
+                item.child(div().text_xs().text_color(fog()).truncate().child(credit))
+            })
             .on_drag(drag, |drag, _, _, cx| cx.new(|_| drag.clone()))
             .on_click(cx.listener(move |this, event: &ClickEvent, _, cx| {
                 if event.click_count() >= 2 {
@@ -753,7 +808,7 @@ impl Rig {
                 .iter()
                 .filter(move |capture| capture.kind == kind)
                 .cloned()
-                .map(Gear::Capture)
+                .map(|capture| Gear::Capture(Box::new(capture)))
                 .collect::<Vec<_>>()
         };
         let amps = of_kind(CaptureKind::Amp);

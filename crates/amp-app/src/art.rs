@@ -60,6 +60,15 @@ pub fn logo() -> Arc<Image> {
     picture!("logo.png", Png)
 }
 
+/// TONE3000's own logo files, shown exactly as they ship.
+pub fn tone3000_logo() -> Arc<Image> {
+    picture!("../tone3000/tone3000.png", Png)
+}
+
+pub fn t3k_mark() -> Arc<Image> {
+    picture!("../tone3000/t3k.png", Png)
+}
+
 pub fn knob_amp() -> Arc<Image> {
     picture!("knob_amp.png", Png)
 }
