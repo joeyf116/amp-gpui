@@ -1,3 +1,4 @@
+mod knob;
 mod rig;
 mod settings;
 

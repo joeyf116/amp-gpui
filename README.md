@@ -6,7 +6,8 @@ pedal or modeler box in between.
 
 Amps are [Neural Amp Modeler](https://www.neuralampmodeler.com/) captures
 (`.nam`), cabinets are impulse responses (`.wav`), and tones live in a plain
-folder you own and can share however you like.
+folder you own and can share however you like. NAM A2 captures hold several
+model sizes, and the amp's Quality knob trades CPU for detail between them.
 
 ## Run it
 

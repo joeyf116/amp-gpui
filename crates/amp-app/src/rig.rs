@@ -1,4 +1,8 @@
-use crate::settings::Settings;
+use crate::{
+    knob::{Knob, accent},
+    settings::Settings,
+};
+use amp_dsp::{AmpInfo, BlockKind};
 use amp_engine::{Command, DeviceList, DeviceOption, ENGINE_RATE, Engine, EngineConfig, Latency};
 use amp_preset::{AssetKind, Library, Preset, PresetEntry, build_chain};
 use gpui_kit::{
@@ -8,7 +12,6 @@ use gpui_kit::{
         h_flex,
         input::{Input, InputState},
         select::{Select, SelectEvent, SelectItem, SelectState},
-        slider::{Slider, SliderEvent, SliderState},
         v_flex,
     },
     prelude::FluentBuilder,
@@ -18,6 +21,16 @@ use std::{path::PathBuf, time::Duration};
 
 const METER_INTERVAL: Duration = Duration::from_millis(50);
 const METER_FLOOR_DB: f32 = -60.0;
+const CARD_KNOB: Pixels = px(52.);
+const AMP_KNOB: Pixels = px(96.);
+/// The Quality param, which only A2 captures respond to.
+const AMP_QUALITY: usize = 2;
+
+#[derive(Clone, Copy, PartialEq)]
+enum View {
+    Amp,
+    Rig,
+}
 
 #[derive(Clone)]
 struct Choice {
@@ -62,15 +75,15 @@ fn position(devices: &[DeviceOption], id: Option<&str>) -> Option<IndexPath> {
         .map(IndexPath::new)
 }
 
-/// The main window: the devices, the signal chain, and the preset library.
+/// The main window: the devices, the amp, the chain, and the tone library.
 pub struct Rig {
     settings: Settings,
     library: Library,
     presets: Vec<PresetEntry>,
     preset: Preset,
     preset_name: Entity<InputState>,
-    sliders: Vec<Vec<Entity<SliderState>>>,
-    slider_subscriptions: Vec<Subscription>,
+    amp_info: Option<AmpInfo>,
+    view: View,
 
     devices: DeviceList,
     input_select: Entity<SelectState<Vec<Choice>>>,
@@ -168,8 +181,8 @@ impl Rig {
             presets: Vec::new(),
             preset,
             preset_name,
-            sliders: Vec::new(),
-            slider_subscriptions: Vec::new(),
+            amp_info: None,
+            view: View::Amp,
             devices,
             input_select,
             channel_select,
@@ -184,7 +197,15 @@ impl Rig {
             _meter_timer: meter_timer,
         };
         rig.refresh_presets();
-        rig.rebuild_sliders(cx);
+        let last_tone = rig.settings.last_tone.as_deref();
+        let last_tone = rig
+            .presets
+            .iter()
+            .find(|entry| Some(entry.preset.name.as_str()) == last_tone)
+            .map(|entry| entry.preset.clone());
+        if let Some(preset) = last_tone {
+            rig.load_preset(preset, window, cx);
+        }
         rig
     }
 
@@ -207,6 +228,12 @@ impl Rig {
         cx.notify();
     }
 
+    fn save_settings(&mut self, cx: &mut Context<Self>) {
+        if let Err(error) = self.settings.save() {
+            self.set_error(error, cx);
+        }
+    }
+
     fn select_input(&mut self, id: String, window: &mut Window, cx: &mut Context<Self>) {
         let channels = self
             .devices
@@ -225,9 +252,7 @@ impl Rig {
 
     /// Saves the choice, and moves live monitoring over to the new devices.
     fn devices_changed(&mut self, cx: &mut Context<Self>) {
-        if let Err(error) = self.settings.save() {
-            self.set_error(error, cx);
-        }
+        self.save_settings(cx);
         if self.engine.is_some() {
             self.engine = None;
             self.start_monitoring(cx);
@@ -245,11 +270,11 @@ impl Rig {
 
     fn start_monitoring(&mut self, cx: &mut Context<Self>) {
         self.error = None;
-        let chain = match build_chain(&self.preset, &self.library, ENGINE_RATE) {
-            Ok(chain) => chain,
+        let built = match build_chain(&self.preset, &self.library, ENGINE_RATE) {
+            Ok(built) => built,
             Err(error) => return self.set_error(error, cx),
         };
-        match Engine::start(Box::new(chain), &self.engine_config()) {
+        match Engine::start(Box::new(built.chain), &self.engine_config()) {
             Ok(engine) => self.engine = Some(engine),
             Err(error) => self.set_error(error, cx),
         }
@@ -263,34 +288,6 @@ impl Rig {
         self.input_level = 0.0;
         self.output_level = 0.0;
         cx.notify();
-    }
-
-    fn rebuild_sliders(&mut self, cx: &mut Context<Self>) {
-        self.sliders.clear();
-        self.slider_subscriptions.clear();
-        for (slot, block) in self.preset.blocks.iter().enumerate() {
-            let mut row = Vec::new();
-            for (param, spec) in block.kind.params().iter().enumerate() {
-                let value = block.param(param);
-                let state = cx.new(|_| {
-                    SliderState::new()
-                        .min(spec.min)
-                        .max(spec.max)
-                        .step((spec.max - spec.min) / 200.0)
-                        .default_value(value)
-                });
-                self.slider_subscriptions.push(cx.subscribe(
-                    &state,
-                    move |this, _, event: &SliderEvent, cx| {
-                        if let SliderEvent::Change(value) = event {
-                            this.set_param(slot, param, value.end(), cx);
-                        }
-                    },
-                ));
-                row.push(state);
-            }
-            self.sliders.push(row);
-        }
     }
 
     fn set_param(&mut self, slot: usize, param: usize, value: f32, cx: &mut Context<Self>) {
@@ -319,20 +316,22 @@ impl Rig {
         let library = self.library.clone();
         cx.spawn_in(window, async move |this, cx| {
             let task = cx.background_executor().spawn(async move {
-                let chain = build_chain(&preset, &library, ENGINE_RATE)?;
-                Ok::<_, amp_preset::LibraryError>((preset, chain))
+                let built = build_chain(&preset, &library, ENGINE_RATE)?;
+                Ok::<_, amp_preset::LibraryError>((preset, built))
             });
             let result = task.await;
             let _ = this.update_in(cx, |this, window, cx| match result {
-                Ok((preset, chain)) => {
+                Ok((preset, built)) => {
                     this.preset_name.update(cx, |input, cx| {
                         input.set_value(preset.name.clone(), window, cx);
                     });
+                    this.settings.last_tone = Some(preset.name.clone());
+                    this.save_settings(cx);
                     this.preset = preset;
-                    this.rebuild_sliders(cx);
+                    this.amp_info = built.amp;
                     this.error = None;
                     if let Some(engine) = &mut this.engine {
-                        engine.send(Command::SetChain(Box::new(chain)));
+                        engine.send(Command::SetChain(Box::new(built.chain)));
                     }
                     cx.notify();
                 }
@@ -389,7 +388,11 @@ impl Rig {
     fn save_preset(&mut self, cx: &mut Context<Self>) {
         self.preset.name = self.preset_name.read(cx).value().to_string();
         match self.library.save_preset(&self.preset) {
-            Ok(_) => self.refresh_presets(),
+            Ok(_) => {
+                self.settings.last_tone = Some(self.preset.name.clone());
+                self.save_settings(cx);
+                self.refresh_presets();
+            }
             Err(error) => self.set_error(error, cx),
         }
         cx.notify();
@@ -432,14 +435,32 @@ impl Rig {
                     this.library = library;
                     this.settings.library = Some(path);
                     this.refresh_presets();
-                    if let Err(error) = this.settings.save() {
-                        this.error = Some(error.to_string().into());
-                    }
+                    this.save_settings(cx);
                 }
                 Err(error) => this.error = Some(error.to_string().into()),
             }
             cx.notify();
         });
+    }
+
+    fn slot_of(&self, kind: BlockKind) -> Option<usize> {
+        self.preset
+            .blocks
+            .iter()
+            .position(|block| block.kind == kind)
+    }
+
+    fn knob(&self, slot: usize, param: usize, size: Pixels, cx: &mut Context<Self>) -> Knob {
+        let block = &self.preset.blocks[slot];
+        Knob::new(
+            SharedString::from(format!("knob-{slot}-{param}")),
+            block.kind.params()[param],
+            block.param(param),
+            size,
+            cx.listener(move |this, value: &f32, _, cx| {
+                this.set_param(slot, param, *value, cx);
+            }),
+        )
     }
 
     fn render_meter(&self, label: &'static str, peak: f32, cx: &App) -> impl IntoElement {
@@ -542,33 +563,43 @@ impl Rig {
     fn render_block(&self, slot: usize, cx: &mut Context<Self>) -> impl IntoElement {
         let block = &self.preset.blocks[slot];
         let enabled = block.enabled;
-        let asset_kind = AssetKind::for_block(block.kind);
+        let kind = block.kind;
+        let asset_kind = AssetKind::for_block(kind);
         let asset_label = block
             .asset
             .as_ref()
             .map(|asset| asset.name.clone())
             .unwrap_or_else(|| match asset_kind {
-                Some(AssetKind::NamModel) => "No model loaded".to_owned(),
+                Some(AssetKind::NamModel) => "No capture loaded".to_owned(),
                 _ => "No cab IR loaded".to_owned(),
             });
+        let params = kind.params().len();
+        let knobs: Vec<_> = (0..params)
+            // A capture with one size has nothing for Quality to choose.
+            .filter(|&param| {
+                kind != BlockKind::Amp
+                    || param != AMP_QUALITY
+                    || self
+                        .amp_info
+                        .as_ref()
+                        .is_some_and(|amp| amp.quality_tiers > 1)
+            })
+            .map(|param| self.knob(slot, param, CARD_KNOB, cx))
+            .collect();
         v_flex()
             .id(("block", slot))
-            .w(px(220.))
+            .w(px(250.))
             .gap_3()
             .p_3()
             .rounded_lg()
             .border_1()
-            .border_color(if enabled {
-                cx.theme().primary
-            } else {
-                cx.theme().border
-            })
+            .border_color(if enabled { accent() } else { cx.theme().border })
             .bg(cx.theme().secondary)
             .child(
                 h_flex()
                     .justify_between()
                     .items_center()
-                    .child(div().font_semibold().child(block.kind.title()))
+                    .child(div().font_semibold().child(kind.title()))
                     .child(
                         Button::new(("toggle", slot))
                             .small()
@@ -604,18 +635,187 @@ impl Rig {
                         ),
                 )
             })
-            .children(block.kind.params().iter().enumerate().map(|(param, spec)| {
-                v_flex()
-                    .gap_1()
+            .child(
+                h_flex()
+                    .flex_wrap()
+                    .gap_2()
+                    .justify_around()
+                    .children(knobs),
+            )
+    }
+
+    fn render_chip(&self, text: impl Into<SharedString>, cx: &App) -> impl IntoElement {
+        div()
+            .px_2()
+            .py(px(2.))
+            .rounded_md()
+            .border_1()
+            .border_color(cx.theme().border)
+            .text_xs()
+            .text_color(cx.theme().muted_foreground)
+            .child(text.into())
+    }
+
+    fn render_amp_panel(&self, slot: usize, cx: &mut Context<Self>) -> impl IntoElement {
+        let block = &self.preset.blocks[slot];
+        let info = self.amp_info.as_ref();
+        let asset_name = block.asset.as_ref().map(|asset| asset.name.clone());
+        let title = info
+            .and_then(|info| info.name.clone().or_else(|| info.gear.clone()))
+            .or(asset_name)
+            .unwrap_or_else(|| "No amp loaded".to_owned());
+        let byline = info.and_then(|info| match (&info.gear, &info.modeled_by) {
+            (Some(gear), Some(by)) => Some(format!("{gear}, captured by {by}")),
+            (Some(gear), None) => Some(gear.clone()),
+            (None, Some(by)) => Some(format!("Captured by {by}")),
+            (None, None) => None,
+        });
+        let mut chips: Vec<AnyElement> = Vec::new();
+        if let Some(info) = info {
+            let kind = if info.quality_tiers > 1 {
+                format!("NAM A2, {} quality sizes", info.quality_tiers)
+            } else {
+                format!("NAM {}", info.architecture)
+            };
+            chips.push(self.render_chip(kind, cx).into_any_element());
+            if let Some(tone) = &info.tone_type {
+                chips.push(self.render_chip(tone.clone(), cx).into_any_element());
+            }
+            if info.includes_cab == Some(true) {
+                chips.push(self.render_chip("Cab in capture", cx).into_any_element());
+            }
+        }
+        let has_quality = info.is_some_and(|info| info.quality_tiers > 1);
+        let loaded = info.is_some();
+        let knobs: Vec<_> = (0..AMP_QUALITY + usize::from(has_quality))
+            .map(|param| self.knob(slot, param, AMP_KNOB, cx))
+            .collect();
+
+        v_flex()
+            .id("amp-panel")
+            .gap_4()
+            .p_5()
+            .rounded_lg()
+            .border_1()
+            .border_color(if block.enabled {
+                accent()
+            } else {
+                cx.theme().border
+            })
+            .bg(cx.theme().secondary)
+            .child(
+                h_flex()
+                    .justify_between()
+                    .items_start()
+                    .gap_3()
                     .child(
-                        h_flex()
-                            .justify_between()
-                            .text_xs()
-                            .child(spec.name)
-                            .child(format!("{:.1} {}", block.param(param), spec.unit)),
+                        v_flex()
+                            .gap_1()
+                            .min_w_0()
+                            .child(div().text_2xl().font_semibold().child(title))
+                            .when_some(byline, |column, byline| {
+                                column.child(
+                                    div()
+                                        .text_sm()
+                                        .text_color(cx.theme().muted_foreground)
+                                        .child(byline),
+                                )
+                            }),
                     )
-                    .child(Slider::new(&self.sliders[slot][param]).accessibility_label(spec.name))
-            }))
+                    .child(
+                        Button::new("load-capture")
+                            .outline()
+                            .label(if loaded { "Change capture" } else { "Load .nam capture" })
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                this.load_asset(slot, window, cx);
+                            })),
+                    ),
+            )
+            .when(!chips.is_empty(), |panel| {
+                panel.child(h_flex().flex_wrap().gap_2().children(chips))
+            })
+            .when(!loaded, |panel| {
+                panel.child(
+                    div()
+                        .text_sm()
+                        .text_color(cx.theme().muted_foreground)
+                        .child("Load a capture to hear an amp. Until then the guitar passes through clean."),
+                )
+            })
+            .child(h_flex().flex_wrap().gap_6().justify_center().children(knobs))
+    }
+
+    fn render_signal_path(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let mut path: Vec<AnyElement> = Vec::new();
+        for (slot, block) in self.preset.blocks.iter().enumerate() {
+            if slot > 0 {
+                path.push(
+                    div()
+                        .w(px(16.))
+                        .h(px(1.))
+                        .bg(cx.theme().border)
+                        .into_any_element(),
+                );
+            }
+            path.push(
+                Button::new(("path", slot))
+                    .small()
+                    .label(block.kind.title())
+                    .when(block.enabled, |button| button.primary())
+                    .when(!block.enabled, |button| button.outline())
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.toggle_block(slot, cx);
+                    }))
+                    .into_any_element(),
+            );
+        }
+        h_flex().flex_wrap().items_center().gap_1().children(path)
+    }
+
+    fn render_amp_view(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let amp = self.slot_of(BlockKind::Amp);
+        let cab = self.slot_of(BlockKind::Cab);
+        let gate = self.slot_of(BlockKind::Gate);
+        let cab_doubled = cab.is_some_and(|cab| {
+            let cab = &self.preset.blocks[cab];
+            cab.enabled && cab.asset.is_some()
+        }) && self
+            .amp_info
+            .as_ref()
+            .is_some_and(|info| info.includes_cab == Some(true));
+
+        v_flex()
+            .gap_3()
+            .child(self.render_signal_path(cx))
+            .when_some(amp, |column, amp| {
+                column.child(self.render_amp_panel(amp, cx))
+            })
+            .when(cab_doubled, |column| {
+                column.child(
+                    div()
+                        .text_sm()
+                        .text_color(accent())
+                        .child("This capture already includes a cabinet, so you are hearing two. Turn off the Cabinet block."),
+                )
+            })
+            .child(
+                h_flex()
+                    .flex_wrap()
+                    .items_start()
+                    .gap_3()
+                    .when_some(gate, |row, gate| row.child(self.render_block(gate, cx)))
+                    .when_some(cab, |row, cab| row.child(self.render_block(cab, cx))),
+            )
+    }
+
+    fn render_rig_view(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let blocks: Vec<_> = (0..self.preset.blocks.len())
+            .map(|slot| self.render_block(slot, cx).into_any_element())
+            .collect();
+        v_flex()
+            .gap_3()
+            .child(self.render_signal_path(cx))
+            .child(h_flex().flex_wrap().items_start().gap_3().children(blocks))
     }
 
     fn render_library(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -686,13 +886,32 @@ impl Rig {
                     ),
             )
     }
+
+    fn render_tab(
+        &self,
+        id: &'static str,
+        label: &'static str,
+        view: View,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        Button::new(id)
+            .small()
+            .label(label)
+            .when(self.view == view, |button| button.primary())
+            .when(self.view != view, |button| button.ghost())
+            .on_click(cx.listener(move |this, _, _, cx| {
+                this.view = view;
+                cx.notify();
+            }))
+    }
 }
 
 impl Render for Rig {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let blocks: Vec<_> = (0..self.preset.blocks.len())
-            .map(|slot| self.render_block(slot, cx).into_any_element())
-            .collect();
+        let body = match self.view {
+            View::Amp => self.render_amp_view(cx).into_any_element(),
+            View::Rig => self.render_rig_view(cx).into_any_element(),
+        };
         v_flex()
             .size_full()
             .bg(cx.theme().background)
@@ -716,13 +935,19 @@ impl Render for Rig {
                     .child(self.render_library(cx))
                     .child(
                         v_flex()
-                            .id("chain")
+                            .id("main")
                             .flex_1()
                             .h_full()
                             .overflow_y_scroll()
                             .gap_3()
                             .p_3()
-                            .child(h_flex().flex_wrap().items_start().gap_3().children(blocks))
+                            .child(
+                                h_flex()
+                                    .gap_1()
+                                    .child(self.render_tab("tab-amp", "Amp", View::Amp, cx))
+                                    .child(self.render_tab("tab-rig", "Full rig", View::Rig, cx)),
+                            )
+                            .child(body)
                             .child(
                                 div()
                                     .text_xs()

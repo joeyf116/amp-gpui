@@ -16,6 +16,11 @@ pub struct AmpInfo {
     /// Whether the capture already has a speaker cabinet in it. A cab block
     /// after one of these would be a second cabinet.
     pub includes_cab: Option<bool>,
+    /// The model type as the file names it, such as `WaveNet`.
+    pub architecture: String,
+    /// How many sizes the capture holds. NAM A2 captures have several, which
+    /// the Quality control picks between. Everything else has one.
+    pub quality_tiers: usize,
 }
 
 /// A Neural Amp Modeler capture with the gain staging `nam-rs` leaves to its
@@ -69,6 +74,7 @@ impl NamAmp {
         // the listener hears is already settled.
         let mut warmup = vec![0.0; model.receptive_field().max(1)];
         model.process_buffer(&mut warmup);
+        let quality_tiers = model.as_slimmable().map_or(1, |slimmable| slimmable.len());
         amp.model = Some(model);
 
         let gear = [
@@ -85,6 +91,8 @@ impl NamAmp {
             gear: (!gear.is_empty()).then_some(gear),
             tone_type: metadata.tone_type.clone(),
             includes_cab: nam.includes_cab(),
+            architecture: nam.architecture.clone(),
+            quality_tiers,
         };
         Ok((amp, info))
     }
@@ -95,6 +103,11 @@ impl Block for NamAmp {
         match index {
             0 => self.input.set(db_to_gain(value)),
             1 => self.output.set(db_to_gain(value)),
+            2 => {
+                if let Some(slimmable) = self.model.as_mut().and_then(Model::as_slimmable_mut) {
+                    slimmable.set_slim_size(value * 0.01);
+                }
+            }
             _ => {}
         }
     }
@@ -130,24 +143,94 @@ mod tests {
 
     /// The smallest valid model: a single one-cell LSTM layer, so tests run
     /// real inference without shipping a capture.
-    fn tiny_lstm(sample_rate: u32, loudness: f32) -> NamModel {
+    fn tiny_lstm_json(sample_rate: u32, loudness: f32, weight: f32) -> String {
         const CELL_AND_INITIAL_STATE: usize = 14;
         const HEAD: usize = 2;
-        let mut weights = vec![0.1_f32; CELL_AND_INITIAL_STATE + HEAD];
+        let mut weights = vec![weight; CELL_AND_INITIAL_STATE + HEAD];
         // The head's bias would only add DC.
         *weights.last_mut().unwrap() = 0.0;
-        let hidden = 1;
-        let json = format!(
+        format!(
             r#"{{
                 "version": "0.5.2",
                 "architecture": "LSTM",
-                "config": {{ "input_size": 1, "hidden_size": {hidden}, "num_layers": 1 }},
+                "config": {{ "input_size": 1, "hidden_size": 1, "num_layers": 1 }},
                 "metadata": {{ "loudness": {loudness}, "name": "Test amp", "gear_type": "amp" }},
                 "weights": {weights:?},
                 "sample_rate": {sample_rate}
             }}"#
+        )
+    }
+
+    fn tiny_lstm(sample_rate: u32, loudness: f32) -> NamModel {
+        NamModel::from_json_str(&tiny_lstm_json(sample_rate, loudness, 0.1))
+            .expect("the test model parses")
+    }
+
+    /// A NAM A2 style container with a small and a full model that sound
+    /// different, so a test can hear which one is active.
+    fn tiny_a2() -> NamModel {
+        let small = tiny_lstm_json(48_000, -18.0, 0.1);
+        let full = tiny_lstm_json(48_000, -18.0, 0.4);
+        let json = format!(
+            r#"{{
+                "version": "0.7.0",
+                "architecture": "SlimmableContainer",
+                "config": {{ "submodels": [
+                    {{ "max_value": 0.5, "model": {small} }},
+                    {{ "max_value": 1.0, "model": {full} }}
+                ] }},
+                "metadata": {{ "name": "Test A2" }},
+                "weights": [],
+                "sample_rate": 48000
+            }}"#
         );
-        NamModel::from_json_str(&json).expect("the test model parses")
+        NamModel::from_json_str(&json).expect("the test container parses")
+    }
+
+    fn sine() -> Vec<f32> {
+        (0..4800).map(|i| (i as f32 * 0.05).sin() * 0.5).collect()
+    }
+
+    #[test]
+    fn reports_the_quality_tiers_of_an_a2_capture() {
+        let (_, a2) = NamAmp::from_nam(&tiny_a2(), 48_000).unwrap();
+        assert_eq!(a2.quality_tiers, 2);
+        assert_eq!(a2.architecture, "SlimmableContainer");
+
+        let (_, single) = NamAmp::from_nam(&tiny_lstm(48_000, -18.0), 48_000).unwrap();
+        assert_eq!(single.quality_tiers, 1);
+    }
+
+    #[test]
+    fn quality_switches_between_the_sizes_of_an_a2_capture() {
+        let (mut full, _) = NamAmp::from_nam(&tiny_a2(), 48_000).unwrap();
+        let (mut small, _) = NamAmp::from_nam(&tiny_a2(), 48_000).unwrap();
+        small.set_param(2, 25.0);
+
+        let mut full_output = sine();
+        let mut small_output = sine();
+        full.process(&mut full_output);
+        small.process(&mut small_output);
+        assert_ne!(full_output, small_output);
+
+        let (mut restored, _) = NamAmp::from_nam(&tiny_a2(), 48_000).unwrap();
+        restored.set_param(2, 25.0);
+        restored.set_param(2, 100.0);
+        let mut restored_output = sine();
+        restored.process(&mut restored_output);
+        assert_eq!(full_output, restored_output);
+    }
+
+    #[test]
+    fn quality_does_nothing_on_a_single_size_capture() {
+        let (mut plain, _) = NamAmp::from_nam(&tiny_lstm(48_000, -18.0), 48_000).unwrap();
+        let (mut dialed, _) = NamAmp::from_nam(&tiny_lstm(48_000, -18.0), 48_000).unwrap();
+        dialed.set_param(2, 10.0);
+        let mut plain_output = sine();
+        let mut dialed_output = sine();
+        plain.process(&mut plain_output);
+        dialed.process(&mut dialed_output);
+        assert_eq!(plain_output, dialed_output);
     }
 
     #[test]

@@ -11,9 +11,16 @@ pub struct Settings {
     #[serde(default)]
     pub input_channel: usize,
     pub library: Option<PathBuf>,
+    /// The tone to reopen, by name, so the app starts ready to play.
+    pub last_tone: Option<String>,
 }
 
+/// `AMP_GPUI_DATA` points the app at another folder, which keeps test runs away
+/// from a real library.
 fn data_dir() -> PathBuf {
+    if let Some(path) = std::env::var_os("AMP_GPUI_DATA") {
+        return path.into();
+    }
     ProjectDirs::from("", "", "amp-gpui")
         .map(|dirs| dirs.data_dir().to_owned())
         .unwrap_or_else(|| PathBuf::from("amp-gpui-data"))

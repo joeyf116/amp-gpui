@@ -10,6 +10,6 @@ mod build;
 mod library;
 mod preset;
 
-pub use build::build_chain;
+pub use build::{BuiltChain, build_chain};
 pub use library::{Library, LibraryError, PresetEntry};
 pub use preset::{AssetKind, AssetRef, BlockPreset, Preset, SCHEMA_VERSION};

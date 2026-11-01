@@ -79,6 +79,7 @@ impl BlockKind {
         const AMP: &[ParamSpec] = &[
             param("input", "Input", "dB", -24.0, 24.0, 0.0),
             param("output", "Output", "dB", -24.0, 24.0, 0.0),
+            param("quality", "Quality", "%", 0.0, 100.0, 100.0),
         ];
         const CAB: &[ParamSpec] = &[param("level", "Level", "dB", -24.0, 12.0, 0.0)];
         const DELAY: &[ParamSpec] = &[
