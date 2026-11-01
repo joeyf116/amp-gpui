@@ -43,7 +43,7 @@ Tones live in a plain folder that you own and can share however you like.
 - **Your own tone library.** It's a folder of JSON and files named by content
   hash, so it works in git, on a synced drive, or on a network share.
 - **Practice tools:** a tuner, a metronome, and a fretboard that shows scales,
-  lights up the notes you play, and turns an MP3's melody into scrolling tab.
+  lights up the notes you play, and turns an MP3 into scrolling tab you can slow down, loop, fix, and play along with.
 
 !!! note "Windows only, for now"
 

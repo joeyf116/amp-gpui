@@ -17,7 +17,7 @@ mod listen;
 mod melody;
 mod metronome;
 mod smooth;
-mod song;
+mod song_map;
 mod tube;
 mod tuner;
 
@@ -32,7 +32,7 @@ pub use gate::Gate;
 pub use listen::{Spectrum, chord_name, midi_hertz};
 pub use melody::{MelodyNote, transcribe};
 pub use metronome::{Click, Metronome};
-pub use song::SongPlayer;
+pub use song_map::{SongChord, SongKey, SongMap, read_song_map};
 pub use tube::TubeAmp;
 pub use tuner::{Pitch, detect_pitch};
 

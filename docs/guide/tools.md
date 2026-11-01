@@ -88,40 +88,80 @@ guitar, so yours will differ.
 The included scales are minor and major pentatonic, blues, major, natural, harmonic,
 and melodic minor, and the Dorian, Phrygian, Lydian, Mixolydian, and Locrian modes.
 
-## Learn a song's melody
+## Learn a song
 
 Press **Load song** under the neck and pick an MP3. WAV, FLAC, and Ogg files work too.
-The app listens to the whole song, which takes a few seconds, and writes out the melody
-as tab.
+The app listens to the whole song, which takes a few seconds, and writes out its melody
+as tab, with the beats, chords, and key. The tuner and metronome tuck away so the neck and
+tab fit together. **Show tuner and metronome** brings them back.
+
+Your files stay on your computer. The song is read in place, and only the app's reading of
+it is kept, in the `songs` folder beside your settings, so it opens at once next time.
 
 - **Play along:** press ++m++ to start monitoring, then **Play**. The song comes through
-  your speakers alongside your rig, so you can play over it. It joins after your rig,
-  so **Output** doesn't change it. The **Song** knob sets its level.
+  your speakers alongside your rig. It joins after your rig, so **Output** doesn't change
+  it. The **Song** knob sets its level.
 - **Follow it on the neck:** the note sounding now lights up, green in your chosen scale
   and amber outside it. The note coming next shows as an outline, so you can get there
   first.
 - **Read ahead:** the tab scrolls past the line near its left edge. Each number is a fret,
-  and the bar after it shows how long the note rings. The top line is the high E string.
+  the bar after it shows how long the note rings, and the top line is the high E string.
+  Chords run along the top, and the faint lines are beats.
 - **Move around:** click anywhere on the bar under the tab.
 
-Your files stay on your computer. The song is read in place, and the app keeps no copy
-once it closes.
+### Slow it down and loop it
+
+- **Speed:** runs from 25 to 100 percent without changing the pitch. Slower than about 50
+  percent starts to sound smeary, but the notes stay clear enough to learn from.
+- **Key:** moves the song up to 6 semitones either way, and the tab with it. If a song is
+  a semitone flat of your guitar, press **+** and it meets you in tune.
+- **Loop:** press **Loop from here** where the hard part starts and **Loop to here** where
+  it ends. Both snap to a nearby beat. **Clear loop** goes back to the whole song.
+- **Speed up each pass:** with a loop running, this adds 5 percent after each pass until
+  it reaches full speed, so you can start slow and work up.
+
+### See how you did
+
+While a song plays with the panel open, the app listens to your guitar and marks each note
+of the tab green when you play it. **You played** shows the share of notes so far, and of
+the last full pass around a loop. Any octave counts. It listens to your guitar before the
+amp, so your tone and the song don't get in its way, but it hears one note at a time, so
+play the line rather than chords. It's a guide: if the tab has a note wrong, it marks you
+down for playing the right one.
+
+### Fix the tab
+
+The melody will have mistakes, so click any number on the tab to pick that note.
+
+- **Lower** and **Raise** move it a semitone.
+- **Other string** moves it to the next string that has that pitch. The line around it
+  shifts to stay playable, and your choice sticks.
+- **Delete** removes it.
+
+Fixes save as you make them.
+
+### Use the song's key and take the tab with you
+
+The song's key shows at the right. **Use on neck** sets the fretboard to it. **Save tab**
+writes a text tab and a MIDI file to a folder you pick, ready to open in another program.
 
 ### What to expect
 
 The app follows the strongest single line through the song. That's usually the singer or
 the lead guitar, but it can switch to another instrument where the melody drops out or
-something else gets louder. It gives you one note at a time, so harmonies, chords, and
-bass lines aren't written out. Treat it as a head start to check by ear, not as the real
-tab.
+something else gets louder. Treat it as a head start to check by ear, not as the real tab.
 
-- **Rough spots:** dense mixes, heavily distorted rhythm guitars, and fast runs are hardest.
-  Clean recordings with one clear lead do best.
-- **Frets:** a recording can't say where a note was played, so the tab uses the route that
+- **Accuracy:** on modeled band recordings, the right note was showing for about 85 to 88
+  percent of the melody's length, but those are synthesized. It hasn't been measured on
+  real songs, and published results for this kind of method on real mixes are nearer
+  55 percent, so expect real work fixing the tab on a busy mix.
+- **Rough spots:** dense mixes, distorted rhythm guitars, and fast runs are hardest. Clean
+  recordings with one clear lead do best.
+- **Chords:** major and minor only, so a seventh shows as its plain chord. A short chord
+  can be missed, and a chord can show as its relative minor or major.
+- **Key:** a best guess. Songs often read as their relative major or minor.
+- **Frets:** a recording can't say where a note was played, so the tab takes the route that
   moves your hand least across the whole line, which may not be the original player's.
 - **Range:** a note too low or too high for the first 15 frets moves by octaves to fit.
 - **Tuning:** a recording a little sharp or flat of concert pitch is corrected for. Songs
-  in a dropped or lower tuning still show as if played in standard.
-
-On modeled band recordings, the right note was showing for about 85 to 88 percent of the
-melody's length. Those are synthesized, not real songs, so yours will differ.
+  played a whole semitone or more down still show as if in standard tuning, so use **Key**.

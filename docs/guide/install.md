@@ -9,7 +9,7 @@ takes a while.
 1. [Rust](https://rustup.rs/), using the stable toolchain. On Windows, `rustup`
    also offers to install the Microsoft C++ build tools, which you need.
 2. [Git](https://git-scm.com/).
-3. LLVM, for ASIO support:
+3. LLVM, for ASIO support and song slow-down:
 
     ```bash
     winget install LLVM.LLVM
@@ -40,8 +40,8 @@ against. Later builds are much quicker.
 
 !!! tip "Skipping ASIO"
 
-    If you don't want LLVM or the SDK, turn ASIO off. You'll still have the two
-    Windows audio routes.
+    If you don't want the SDK, turn ASIO off. You'll still have the two Windows
+    audio routes.
 
     ```bash
     cargo run -p amp-app --release --no-default-features

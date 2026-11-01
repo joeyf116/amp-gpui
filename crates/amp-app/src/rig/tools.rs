@@ -89,7 +89,6 @@ impl Rig {
     }
 
     pub(super) fn read_tuner(&mut self) {
-        self.follow_song();
         if let Some(engine) = &mut self.engine {
             engine.read_tuner(&mut self.tuner_samples);
             let extra = self.tuner_samples.len().saturating_sub(LISTEN_FRAMES);
@@ -101,6 +100,7 @@ impl Rig {
             if heard.is_some() {
                 self.pitch = heard;
             }
+            self.follow_song(heard);
             let (strings, learned) = self.string_stiffness();
             let finished = self.fretboard.hearing.hear(
                 &self.tuner_samples,
@@ -477,6 +477,7 @@ impl Rig {
     }
 
     pub(super) fn render_tools(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let compact = self.fretboard.song.compact;
         v_flex()
             .id("tools")
             .occlude()
@@ -501,6 +502,20 @@ impl Rig {
                     .border_color(hairline())
                     .child(div().font_semibold().child("Practice tools"))
                     .child(
+                        Button::new("toggle-tuner")
+                            .small()
+                            .ghost()
+                            .label(if compact {
+                                "Show tuner and metronome"
+                            } else {
+                                "Hide tuner and metronome"
+                            })
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.fretboard.song.compact = !this.fretboard.song.compact;
+                                cx.notify();
+                            })),
+                    )
+                    .child(
                         Button::new("close-tools")
                             .small()
                             .ghost()
@@ -510,13 +525,15 @@ impl Rig {
                             })),
                     ),
             )
-            .child(
-                h_flex()
-                    .flex_shrink_0()
-                    .items_start()
-                    .child(self.render_tuner_card(cx))
-                    .child(self.render_metronome_card(cx)),
-            )
+            .when(!compact, |panel| {
+                panel.child(
+                    h_flex()
+                        .flex_shrink_0()
+                        .items_start()
+                        .child(self.render_tuner_card(cx))
+                        .child(self.render_metronome_card(cx)),
+                )
+            })
             .child(self.render_fretboard(cx))
     }
 }

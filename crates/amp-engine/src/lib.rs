@@ -12,6 +12,7 @@ mod exclusive;
 mod processor;
 mod pump;
 mod resampler;
+mod song;
 mod song_file;
 
 pub use engine::{
@@ -19,4 +20,5 @@ pub use engine::{
 };
 pub use processor::{Command, Controller, Latency, Meters, Processor, processor};
 pub use pump::ENGINE_RATE;
+pub use song::{SongFeed, SongOutlet, SongPlan};
 pub use song_file::{SongError, read_song};

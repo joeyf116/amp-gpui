@@ -10,7 +10,7 @@ use crate::{
     art::PRINT_FONT,
     style::{fog, glow, hairline, moss},
 };
-use amp_dsp::{MelodyNote, Pitch, Spectrum, chord_name};
+use amp_dsp::{MelodyNote, Pitch, SongKey, Spectrum, chord_name};
 use amp_engine::ENGINE_RATE;
 use gpui_kit::{
     component::{
@@ -56,10 +56,8 @@ const NECK_HEIGHT: f32 = 0.12;
 const OPEN_STRING: f32 = 0.2;
 /// How many frets past the first finger the hand reaches without moving.
 const HAND_SPAN: i32 = 3;
-/// A rest longer than this gives the hand time to move, in seconds, and moving
-/// then costs this share of what it does mid-phrase.
-const REST: f32 = 0.5;
-const RESTED_MOVE: f32 = 0.3;
+/// How quickly a gap between notes eases a hand move, per second.
+const MOVE_TIME: f32 = 3.0;
 /// Clean readings of each open string needed to learn it.
 const LEARN_READINGS: usize = 5;
 const STRING_NAMES: [&str; 6] = ["high E", "B", "G", "D", "A", "low E"];
@@ -92,7 +90,7 @@ fn fret_share(fret: f32) -> f32 {
 }
 
 /// Every place a pitch can be fretted, as string and fret.
-fn positions(midi: i32) -> impl Iterator<Item = (usize, i32)> {
+pub(super) fn positions(midi: i32) -> impl Iterator<Item = (usize, i32)> {
     TUNING
         .iter()
         .enumerate()
@@ -249,13 +247,18 @@ fn fold_onto_neck(midi: i32) -> i32 {
 /// rather than the best guess for each note as it comes. Each step weighs every
 /// hand position that could reach the note, so a run settles into one position
 /// instead of creeping up the neck a fret at a time.
-pub(super) fn finger_line(notes: &[MelodyNote]) -> Vec<(usize, i32)> {
+pub(super) fn finger_line(notes: &[MelodyNote], pins: &[Option<usize>]) -> Vec<(usize, i32)> {
     /// A hand position, as the fret under the first finger, and a place it plays.
     type Spot = (i32, usize, i32);
     let spots: Vec<Vec<Spot>> = notes
         .iter()
-        .map(|note| {
-            positions(fold_onto_neck(note.midi))
+        .zip(pins)
+        .map(|(note, pin)| {
+            let midi = fold_onto_neck(note.midi);
+            let pinned = |(string, _): &(usize, i32)| pin.is_none_or(|pin| pin == *string);
+            let any_pin_fits = positions(midi).any(|place| pinned(&place));
+            positions(midi)
+                .filter(move |place| !any_pin_fits || pinned(place))
                 .flat_map(|(string, fret)| {
                     let hands = match fret {
                         // An open string leaves the hand free, wherever it is.
@@ -278,8 +281,9 @@ pub(super) fn finger_line(notes: &[MelodyNote]) -> Vec<(usize, i32)> {
             links.push(vec![0; here.len()]);
             continue;
         }
-        let rested = notes[index].start - notes[index - 1].end > REST;
-        let scale = if rested { RESTED_MOVE } else { 1.0 };
+        // A gap gives the hand time to get there, so moving costs less.
+        let gap = (notes[index].start - notes[index - 1].end).max(0.0);
+        let scale = 1.0 / (1.0 + gap * MOVE_TIME);
         let mut next = Vec::with_capacity(here.len());
         let mut link = Vec::with_capacity(here.len());
         for spot in here {
@@ -586,6 +590,30 @@ impl Rig {
             Some(strings) => (strings, true),
             None => (STRING_STIFFNESS, false),
         }
+    }
+
+    /// Sets the neck to a song's key, with the full scale of its mode.
+    pub(super) fn use_song_key(
+        &mut self,
+        key: SongKey,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let scale = if key.minor {
+            "Natural minor (Aeolian)"
+        } else {
+            "Major (Ionian)"
+        };
+        self.settings.key = key.root;
+        self.settings.scale = scale.to_owned();
+        self.fretboard.key_select.update(cx, |select, cx| {
+            select.set_selected_index(Some(IndexPath::new(key.root)), window, cx);
+        });
+        self.fretboard.scale_select.update(cx, |select, cx| {
+            select.set_selected_index(Some(IndexPath::new(scale_index(scale))), window, cx);
+        });
+        self.save_settings(cx);
+        cx.notify();
     }
 
     fn toggle_learning(&mut self, cx: &mut Context<Self>) {
@@ -906,10 +934,21 @@ mod tests {
             .collect()
     }
 
+    fn finger(pitches: &[i32]) -> Vec<(usize, i32)> {
+        finger_line(&line(pitches), &vec![None; pitches.len()])
+    }
+
+    #[test]
+    fn a_chosen_string_holds_and_the_line_moves_to_meet_it() {
+        let spots = finger_line(&line(&[69, 71, 72]), &[None, Some(1), None]);
+        assert_eq!(spots[1], (1, 12));
+        assert!(spots[0].1 >= 5, "{spots:?}");
+    }
+
     #[test]
     fn a_scale_run_stays_in_one_position() {
         // A minor pentatonic in fifth position, across three strings.
-        let spots = finger_line(&line(&[60, 62, 64, 67, 69, 72, 74]));
+        let spots = finger(&[60, 62, 64, 67, 69, 72, 74]);
         let frets: Vec<i32> = spots.iter().map(|(_, fret)| *fret).collect();
         let (low, high) = (frets.iter().min().unwrap(), frets.iter().max().unwrap());
         assert!(high - low <= 5, "{spots:?}");
@@ -918,14 +957,14 @@ mod tests {
     #[test]
     fn a_line_looks_ahead_to_where_it_is_going() {
         // Ending high on the neck pulls the start of the line up to meet it.
-        let spots = finger_line(&line(&[65, 76, 79, 76, 79]));
+        let spots = finger(&[65, 76, 79, 76, 79]);
         assert!(spots[0].1 >= 5, "{spots:?}");
     }
 
     #[test]
     fn every_note_of_a_line_lands_on_its_own_pitch() {
         let pitches = [52, 55, 57, 60, 64, 69, 67, 64, 62, 60];
-        for (spot, midi) in finger_line(&line(&pitches)).iter().zip(pitches) {
+        for (spot, midi) in finger(&pitches).iter().zip(pitches) {
             assert_eq!(super::TUNING[spot.0] + spot.1, midi);
         }
     }
@@ -935,7 +974,7 @@ mod tests {
         assert_eq!(fold_onto_neck(28), 40);
         assert_eq!(fold_onto_neck(91), 79);
         assert_eq!(fold_onto_neck(60), 60);
-        assert!(finger_line(&[]).is_empty());
+        assert!(finger(&[]).is_empty());
     }
 
     #[test]
