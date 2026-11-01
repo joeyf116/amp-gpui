@@ -595,7 +595,7 @@ fn capture_name(info: &AmpInfo) -> Option<&str> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::landing;
 
     #[test]
     fn a_drop_past_the_unit_accounts_for_it_leaving_its_slot() {

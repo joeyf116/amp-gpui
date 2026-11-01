@@ -379,7 +379,7 @@ pub fn draw(art: &GearArt, enabled: bool) -> Div {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{PedalLook, Shape};
 
     #[test]
     fn reads_the_type_of_a_pedal_from_its_name() {
