@@ -525,6 +525,11 @@ impl Engine {
         let _ = self.controller.send(command);
     }
 
+    /// Collects guitar samples for the tuner, once it's switched on in the meters.
+    pub fn read_tuner(&mut self, into: &mut Vec<f32>) {
+        self.controller.read_tuner(into);
+    }
+
     /// Frees chains the audio thread has replaced. Call from a UI timer.
     pub fn drop_retired(&mut self) {
         self.controller.drop_retired();

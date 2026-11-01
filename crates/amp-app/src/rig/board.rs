@@ -11,7 +11,7 @@ use amp_preset::{AssetKind, BlockPreset, CaptureEntry, CaptureKind};
 use gpui_kit::{
     base::spring,
     component::{
-        ActiveTheme, Sizable, StyledExt,
+        ActiveTheme, Disableable, Sizable, StyledExt,
         button::{Button, ButtonVariants},
         h_flex, v_flex,
     },
@@ -20,6 +20,7 @@ use gpui_kit::{
 };
 
 const GAP: f32 = 22.0;
+const FOOTSWITCH_HEIGHT: f32 = 54.0;
 const SETTINGS_KNOB: Pixels = px(72.);
 const BUILT_IN: [BlockKind; 8] = [
     BlockKind::Tube,
@@ -115,6 +116,13 @@ impl Render for BoardDrag {
     }
 }
 
+/// The unit a step lands on, wrapping at the ends. With nothing selected, Right
+/// starts at the first unit and Left at the last.
+fn step_selection(current: Option<usize>, step: isize, count: isize) -> usize {
+    let start = current.map_or(if step > 0 { -1 } else { 0 }, |slot| slot as isize);
+    (start + step).rem_euclid(count) as usize
+}
+
 /// Where `moved` lands once it is taken out of the chain, for a drop in `gap`.
 fn landing(moved: usize, gap: usize) -> usize {
     if gap > moved { gap - 1 } else { gap }
@@ -134,6 +142,7 @@ impl Rig {
     }
 
     fn insert_block(&mut self, block: BlockPreset, slot: usize, cx: &mut Context<Self>) {
+        self.remember();
         let slot = slot.min(self.preset.blocks.len());
         self.preset.blocks.insert(slot, block);
         self.captures.insert(slot, None);
@@ -145,6 +154,7 @@ impl Rig {
         if from == to || to >= self.preset.blocks.len() {
             return;
         }
+        self.remember();
         let block = self.preset.blocks.remove(from);
         self.preset.blocks.insert(to, block);
         let capture = self.captures.remove(from);
@@ -154,6 +164,7 @@ impl Rig {
     }
 
     fn remove_block(&mut self, slot: usize, cx: &mut Context<Self>) {
+        self.remember();
         self.preset.blocks.remove(slot);
         self.captures.remove(slot);
         self.selected = None;
@@ -177,6 +188,7 @@ impl Rig {
     /// Sorts the board into the usual order. A guideline, not a rule, so
     /// anything can be dragged back out of it.
     fn arrange(&mut self, cx: &mut Context<Self>) {
+        self.remember();
         let mut order: Vec<usize> = (0..self.preset.blocks.len()).collect();
         order.sort_by_key(|slot| self.shape_of(*slot).rank());
         self.preset.blocks = order
@@ -187,6 +199,52 @@ impl Rig {
         self.selected = None;
         self.settings_open = false;
         self.rebuild_chain(cx);
+    }
+
+    pub(super) fn remove_selected(&mut self, cx: &mut Context<Self>) {
+        if let Some(slot) = self
+            .selected
+            .filter(|slot| *slot < self.preset.blocks.len())
+        {
+            self.remove_block(slot, cx);
+        }
+    }
+
+    pub(super) fn bypass_selected(&mut self, cx: &mut Context<Self>) {
+        if let Some(slot) = self
+            .selected
+            .filter(|slot| *slot < self.preset.blocks.len())
+        {
+            self.toggle_block(slot, cx);
+        }
+    }
+
+    pub(super) fn open_selected(&mut self, cx: &mut Context<Self>) {
+        self.settings_open = self.selected.is_some();
+        cx.notify();
+    }
+
+    pub(super) fn close_selected(&mut self, cx: &mut Context<Self>) {
+        self.settings_open = false;
+        cx.notify();
+    }
+
+    pub(super) fn select_step(&mut self, step: isize, cx: &mut Context<Self>) {
+        let count = self.preset.blocks.len() as isize;
+        if count > 0 {
+            self.selected = Some(step_selection(self.selected, step, count));
+            cx.notify();
+        }
+    }
+
+    pub(super) fn move_selected(&mut self, step: isize, cx: &mut Context<Self>) {
+        let Some(slot) = self.selected else {
+            return;
+        };
+        let target = slot as isize + step;
+        if target >= 0 {
+            self.move_block(slot, target as usize, cx);
+        }
     }
 
     fn render_gap(
@@ -250,14 +308,17 @@ impl Rig {
         let art = block_art(block, self.block_name(slot));
         let selected = self.selected == Some(slot);
         let enabled = block.enabled;
+        let is_stomp = matches!(art.shape, Shape::Stomp(_));
         let drag = BoardDrag {
             source: DragSource::Board(slot),
             art: art.clone(),
         };
         div()
             .id(("unit", slot))
+            .relative()
             .rounded_lg()
             .cursor_grab()
+            .hover(|unit| unit.shadow(vec![glow(0.18, 14.0)]))
             .when(selected, |unit| unit.shadow(vec![glow(0.4, 18.0)]))
             .on_drag(drag, |drag, _, _, cx| cx.new(|_| drag.clone()))
             .on_drag_move::<BoardDrag>(cx.listener(
@@ -273,14 +334,32 @@ impl Rig {
                 let gap = this.hover_gap.unwrap_or(slot);
                 this.drop_on_board(drag, gap, cx);
             }))
-            .on_click(cx.listener(move |this, event: &ClickEvent, _, cx| {
+            .on_click(cx.listener(move |this, event: &ClickEvent, window, cx| {
                 this.selected = Some(slot);
+                this.focus.focus(window, cx);
                 if event.click_count() >= 2 {
                     this.settings_open = true;
                 }
                 cx.notify();
             }))
             .child(art::draw(&art, enabled))
+            .when(is_stomp, |unit| {
+                // The footswitch works like a real one: press it to bypass.
+                unit.child(
+                    div()
+                        .id(("footswitch", slot))
+                        .absolute()
+                        .bottom_0()
+                        .left_0()
+                        .right_0()
+                        .h(px(FOOTSWITCH_HEIGHT))
+                        .cursor_pointer()
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            cx.stop_propagation();
+                            this.toggle_block(slot, cx);
+                        })),
+                )
+            })
     }
 
     fn render_jack(&self, label: &'static str) -> impl IntoElement {
@@ -471,14 +550,34 @@ impl Rig {
                         div()
                             .text_xs()
                             .text_color(fog())
-                            .child("Drag gear to place it. Double-click a unit for its settings."),
+                            .child("Drag gear to place it. Double-click for settings, press a footswitch to bypass, and Ctrl+Z to undo."),
                     )
                     .child(
-                        Button::new("arrange")
-                            .small()
-                            .ghost()
-                            .label("Arrange in usual order")
-                            .on_click(cx.listener(|this, _, _, cx| this.arrange(cx))),
+                        h_flex()
+                            .gap_1()
+                            .child(
+                                Button::new("undo")
+                                    .small()
+                                    .ghost()
+                                    .label("Undo")
+                                    .disabled(self.history.is_empty())
+                                    .on_click(cx.listener(|this, _, _, cx| this.undo(cx))),
+                            )
+                            .child(
+                                Button::new("redo")
+                                    .small()
+                                    .ghost()
+                                    .label("Redo")
+                                    .disabled(self.future.is_empty())
+                                    .on_click(cx.listener(|this, _, _, cx| this.redo(cx))),
+                            )
+                            .child(
+                                Button::new("arrange")
+                                    .small()
+                                    .ghost()
+                                    .label("Arrange in usual order")
+                                    .on_click(cx.listener(|this, _, _, cx| this.arrange(cx))),
+                            ),
                     ),
             )
             .child(self.render_board(window, cx))
@@ -598,7 +697,16 @@ fn capture_name(info: &AmpInfo) -> Option<&str> {
 
 #[cfg(test)]
 mod tests {
-    use super::landing;
+    use super::{landing, step_selection};
+
+    #[test]
+    fn arrow_keys_start_at_the_near_end_and_wrap() {
+        assert_eq!(step_selection(None, 1, 4), 0);
+        assert_eq!(step_selection(None, -1, 4), 3);
+        assert_eq!(step_selection(Some(3), 1, 4), 0);
+        assert_eq!(step_selection(Some(0), -1, 4), 3);
+        assert_eq!(step_selection(Some(1), 1, 4), 2);
+    }
 
     #[test]
     fn a_drop_past_the_unit_accounts_for_it_leaving_its_slot() {

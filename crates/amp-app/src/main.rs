@@ -16,6 +16,7 @@ use rig::Rig;
 fn main() {
     gpui_kit::application().run(|cx| {
         gpui_kit::init(cx);
+        rig::bind_keys(cx);
         let themes: ThemeSet = serde_json::from_str(THEME).expect("the bundled theme is valid");
         Theme::update(cx, |theme| {
             for config in themes.themes {

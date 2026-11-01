@@ -15,6 +15,7 @@ mod filter;
 mod gate;
 mod smooth;
 mod tube;
+mod tuner;
 
 pub use amp::{AmpInfo, NamAmp};
 pub use block::{Block, BlockKind, ParamSpec};
@@ -25,6 +26,7 @@ pub use drive::Drive;
 pub use effects::{Chorus, Compressor, Reverb};
 pub use gate::Gate;
 pub use tube::TubeAmp;
+pub use tuner::{Pitch, detect_pitch};
 
 /// The longest slice a block is ever handed in one call. [`Chain::process`]
 /// splits anything longer, so blocks can size their scratch space to this.

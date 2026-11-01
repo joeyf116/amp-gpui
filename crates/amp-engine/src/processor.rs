@@ -3,7 +3,7 @@ use rtrb::{Consumer, Producer, RingBuffer};
 use std::{
     sync::{
         Arc,
-        atomic::{AtomicU32, AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
     },
     time::Duration,
 };
@@ -15,6 +15,11 @@ const RETIRED_CAPACITY: usize = 16;
 const FADE_FRAMES: usize = 240;
 /// The longest block that gets a crossfade. The engine sends far less.
 const FADE_SCRATCH: usize = 4_096;
+const TUNER_CAPACITY: usize = 16_384;
+/// How quickly level changes land, per sample. About 10 ms, to avoid zipper noise.
+const GAIN_SMOOTHING: f32 = 0.002;
+/// Where the safety limiter starts to lean on the signal.
+const LIMIT_KNEE: f32 = 0.9;
 
 /// A change from the UI, applied between audio blocks.
 pub enum Command {
@@ -27,6 +32,10 @@ pub enum Command {
         slot: usize,
         bypassed: bool,
     },
+    /// The level going into the chain, as a linear gain.
+    SetInputGain(f32),
+    /// The level leaving the chain, as a linear gain.
+    SetOutputGain(f32),
     /// Replaces the whole chain. It is boxed because building one allocates
     /// and loads files, and all of that has to stay off the audio thread.
     SetChain(Box<Chain>),
@@ -41,6 +50,7 @@ pub struct Meters {
     input_device_us: AtomicU32,
     queue_us: AtomicU32,
     output_device_us: AtomicU32,
+    tuner_on: AtomicBool,
 }
 
 /// Where the delay between string and speaker goes. Only what the drivers
@@ -59,6 +69,11 @@ impl Latency {
 }
 
 impl Meters {
+    /// Tells the audio thread whether to copy the guitar to the tuner.
+    pub fn set_tuner(&self, on: bool) {
+        self.tuner_on.store(on, Ordering::Relaxed);
+    }
+
     pub fn latency(&self) -> Latency {
         let read = |value: &AtomicU32| value.load(Ordering::Relaxed) as f32 / 1_000.0;
         Latency {
@@ -112,6 +127,7 @@ impl Meters {
 pub struct Controller {
     commands: Producer<Command>,
     retired: Consumer<Box<Chain>>,
+    tuner: Consumer<f32>,
     pub meters: Arc<Meters>,
 }
 
@@ -122,6 +138,13 @@ impl Controller {
         self.commands.push(command).map_err(|error| match error {
             rtrb::PushError::Full(command) => command,
         })
+    }
+
+    /// Moves the guitar samples the audio thread has copied so far into into.
+    pub fn read_tuner(&mut self, into: &mut Vec<f32>) {
+        while let Ok(sample) = self.tuner.pop() {
+            into.push(sample);
+        }
     }
 
     /// Frees chains the audio thread has finished with. Call this regularly
@@ -141,7 +164,43 @@ pub struct Processor {
     pending_retire: Option<Box<Chain>>,
     fade: Option<Fade>,
     fade_scratch: Vec<f32>,
+    tuner: Producer<f32>,
+    input_gain: Ramp,
+    output_gain: Ramp,
     meters: Arc<Meters>,
+}
+
+/// A gain that glides to its target.
+struct Ramp {
+    current: f32,
+    target: f32,
+}
+
+impl Ramp {
+    fn new() -> Self {
+        Self {
+            current: 1.0,
+            target: 1.0,
+        }
+    }
+
+    #[inline]
+    fn next(&mut self) -> f32 {
+        self.current += (self.target - self.current) * GAIN_SMOOTHING;
+        self.current
+    }
+}
+
+/// Leaves normal levels alone, and bends peaks into full scale rather than
+/// flattening them, so a stray transient can't hard-clip at the speakers.
+#[inline]
+fn limit(sample: f32) -> f32 {
+    let level = sample.abs();
+    if level <= LIMIT_KNEE {
+        return sample;
+    }
+    let room = 1.0 - LIMIT_KNEE;
+    (LIMIT_KNEE + room * ((level - LIMIT_KNEE) / room).tanh()).copysign(sample)
 }
 
 /// The outgoing chain, still running while the new one fades in.
@@ -153,6 +212,7 @@ struct Fade {
 pub fn processor(chain: Box<Chain>) -> (Processor, Controller) {
     let (command_tx, command_rx) = RingBuffer::new(COMMAND_CAPACITY);
     let (retired_tx, retired_rx) = RingBuffer::new(RETIRED_CAPACITY);
+    let (tuner_tx, tuner_rx) = RingBuffer::new(TUNER_CAPACITY);
     let meters = Arc::new(Meters::default());
     (
         Processor {
@@ -162,11 +222,15 @@ pub fn processor(chain: Box<Chain>) -> (Processor, Controller) {
             pending_retire: None,
             fade: None,
             fade_scratch: vec![0.0; FADE_SCRATCH],
+            tuner: tuner_tx,
+            input_gain: Ramp::new(),
+            output_gain: Ramp::new(),
             meters: meters.clone(),
         },
         Controller {
             commands: command_tx,
             retired: retired_rx,
+            tuner: tuner_rx,
             meters,
         },
     )
@@ -175,6 +239,15 @@ pub fn processor(chain: Box<Chain>) -> (Processor, Controller) {
 impl Processor {
     pub fn process(&mut self, buffer: &mut [f32]) {
         self.apply_commands();
+        // Tapped before the trim, so the tuner works with the input turned down.
+        if self.meters.tuner_on.load(Ordering::Relaxed) {
+            for sample in buffer.iter() {
+                let _ = self.tuner.push(*sample);
+            }
+        }
+        for sample in buffer.iter_mut() {
+            *sample *= self.input_gain.next();
+        }
         Meters::raise(&self.meters.input_peak, peak(buffer));
         let faded = buffer.len().min(FADE_SCRATCH);
         if self.fade.is_some() {
@@ -183,7 +256,7 @@ impl Processor {
         self.chain.process(buffer);
         self.mix_in_fade(&mut buffer[..faded]);
         for sample in buffer.iter_mut() {
-            *sample = sample.clamp(-1.0, 1.0);
+            *sample = limit(*sample * self.output_gain.next());
         }
         Meters::raise(&self.meters.output_peak, peak(buffer));
     }
@@ -204,6 +277,8 @@ impl Processor {
                 Command::SetBypassed { slot, bypassed } => {
                     self.chain.set_bypassed(slot, bypassed);
                 }
+                Command::SetInputGain(gain) => self.input_gain.target = gain,
+                Command::SetOutputGain(gain) => self.output_gain.target = gain,
                 Command::SetChain(chain) => {
                     let old = std::mem::replace(&mut self.chain, chain);
                     if let Some(fade) = self.fade.take() {
@@ -317,6 +392,38 @@ mod tests {
     }
 
     #[test]
+    fn normal_levels_pass_the_limiter_untouched() {
+        assert_eq!(limit(0.5), 0.5);
+        assert_eq!(limit(-0.9), -0.9);
+        assert!(limit(50.0) <= 1.0);
+        assert!(limit(1.2) > limit(1.0));
+    }
+
+    #[test]
+    fn level_changes_glide_to_their_target() {
+        let (mut processor, mut controller) = processor(scale_chain(1.0));
+        assert!(controller.send(Command::SetOutputGain(0.25)).is_ok());
+        let mut buffer = [0.5; 8_192];
+        processor.process(&mut buffer);
+        assert!(buffer[0] > 0.49);
+        assert!((buffer[8_191] - 0.125).abs() < 0.001);
+    }
+
+    #[test]
+    fn the_tuner_hears_the_guitar_only_while_it_is_open() {
+        let (mut processor, mut controller) = processor(scale_chain(1.0));
+        let mut heard = Vec::new();
+        processor.process(&mut [0.25; 16]);
+        controller.read_tuner(&mut heard);
+        assert!(heard.is_empty());
+
+        controller.meters.set_tuner(true);
+        processor.process(&mut [0.25; 16]);
+        controller.read_tuner(&mut heard);
+        assert_eq!(heard, [0.25; 16]);
+    }
+
+    #[test]
     fn a_chain_swap_fades_instead_of_jumping() {
         let (mut processor, mut controller) = processor(scale_chain(1.0));
         assert!(controller.send(Command::SetChain(scale_chain(0.0))).is_ok());
@@ -331,13 +438,14 @@ mod tests {
     }
 
     #[test]
-    fn clamps_output_and_reports_peaks() {
+    fn limits_output_and_reports_peaks() {
         let (mut processor, controller) = processor(scale_chain(4.0));
         let mut buffer = [0.5, -0.25];
         processor.process(&mut buffer);
-        assert_eq!(buffer, [1.0, -1.0]);
+        assert!(buffer[0] > 0.9 && buffer[0] <= 1.0);
+        assert!(buffer[1] < -0.9 && buffer[1] >= -1.0);
         assert_eq!(controller.meters.take_input_peak(), 0.5);
-        assert_eq!(controller.meters.take_output_peak(), 1.0);
+        assert!(controller.meters.take_output_peak() <= 1.0);
         assert_eq!(controller.meters.take_output_peak(), 0.0);
     }
 }

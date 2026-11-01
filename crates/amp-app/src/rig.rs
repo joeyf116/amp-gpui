@@ -1,17 +1,18 @@
 mod board;
 mod practice;
+mod tuner;
 
 use crate::{
     knob::Knob,
     settings::Settings,
     style::{fog, hairline, pane},
 };
-use amp_dsp::AmpInfo;
+use amp_dsp::{AmpInfo, BlockKind, ParamSpec, Pitch};
 use amp_engine::{
     Command, DeviceList, DeviceOption, ENGINE_RATE, Engine, EngineConfig, Latency, LatencyMode,
 };
 use amp_preset::{
-    AssetKind, CaptureEntry, Library, LibraryError, Preset, PresetEntry, build_chain,
+    AssetKind, BlockPreset, CaptureEntry, Library, LibraryError, Preset, PresetEntry, build_chain,
 };
 use gpui_kit::{
     component::{
@@ -30,6 +31,74 @@ use std::{path::PathBuf, time::Duration};
 
 const METER_INTERVAL: Duration = Duration::from_millis(50);
 const METER_FLOOR_DB: f32 = -60.0;
+/// How many edits Undo can step back through.
+const HISTORY: usize = 64;
+/// Waits this long after a level knob stops before writing settings to disk.
+const SETTINGS_SAVE_DELAY: f32 = 1.0;
+const FIRST_TONE: &str = "Moss Clean";
+const KNOB_INPUT: ParamSpec = ParamSpec {
+    id: "input_level",
+    name: "Input",
+    unit: "dB",
+    min: -24.0,
+    max: 24.0,
+    default: 0.0,
+};
+const KNOB_OUTPUT: ParamSpec = ParamSpec {
+    id: "output_level",
+    name: "Output",
+    unit: "dB",
+    min: -40.0,
+    max: 12.0,
+    default: 0.0,
+};
+
+actions!(
+    rig,
+    [
+        Undo,
+        Redo,
+        RemoveUnit,
+        BypassUnit,
+        OpenUnit,
+        CloseUnit,
+        PreviousUnit,
+        NextUnit,
+        MoveUnitLeft,
+        MoveUnitRight,
+        PreviousTone,
+        NextTone,
+        ToggleMonitoring,
+        ToggleTuner
+    ]
+);
+
+/// Keys that act on the board. They only fire outside a text field, so typing
+/// a tone's name can't remove a pedal.
+pub fn bind_keys(cx: &mut App) {
+    let rig = Some("Rig");
+    cx.bind_keys([
+        KeyBinding::new("ctrl-z", Undo, rig),
+        KeyBinding::new("ctrl-y", Redo, rig),
+        KeyBinding::new("ctrl-shift-z", Redo, rig),
+        KeyBinding::new("delete", RemoveUnit, rig),
+        KeyBinding::new("b", BypassUnit, rig),
+        KeyBinding::new("enter", OpenUnit, rig),
+        KeyBinding::new("escape", CloseUnit, rig),
+        KeyBinding::new("left", PreviousUnit, rig),
+        KeyBinding::new("right", NextUnit, rig),
+        KeyBinding::new("alt-left", MoveUnitLeft, rig),
+        KeyBinding::new("alt-right", MoveUnitRight, rig),
+        KeyBinding::new("pageup", PreviousTone, rig),
+        KeyBinding::new("pagedown", NextTone, rig),
+        KeyBinding::new("m", ToggleMonitoring, rig),
+        KeyBinding::new("t", ToggleTuner, rig),
+    ]);
+}
+
+fn db_to_gain(db: f32) -> f32 {
+    10.0_f32.powf(db / 20.0)
+}
 const ASIO_SCAN_DELAY: Duration = Duration::from_millis(300);
 const WINDOWS_AUDIO: &str = "Windows audio";
 /// The Quality param, which only A2 captures respond to.
@@ -105,6 +174,17 @@ pub struct Rig {
     captures: Vec<Option<AmpInfo>>,
     /// Counts chain builds, so a slow one can't overwrite a newer edit.
     build: u64,
+    /// The board as last saved or loaded, to tell when there are unsaved edits.
+    saved_blocks: Vec<BlockPreset>,
+    history: Vec<Preset>,
+    future: Vec<Preset>,
+    /// The knob being turned, so one long turn is one step of undo.
+    last_param: Option<(usize, usize)>,
+    focus: FocusHandle,
+    settings_save_at: Option<f32>,
+    tuner_open: bool,
+    tuner_samples: Vec<f32>,
+    pitch: Option<Pitch>,
     view: View,
     practice: Practice,
 
@@ -221,6 +301,8 @@ impl Rig {
         let name = preset.name.clone();
         let preset_name = cx.new(|cx| InputState::new(window, cx).default_value(name));
         let captures = vec![None; preset.blocks.len()];
+        let focus = cx.focus_handle();
+        focus.focus(window, cx);
         let mut rig = Self {
             settings,
             library,
@@ -230,6 +312,15 @@ impl Rig {
             preset_name,
             captures,
             build: 0,
+            saved_blocks: Vec::new(),
+            history: Vec::new(),
+            future: Vec::new(),
+            last_param: None,
+            focus: focus.clone(),
+            settings_save_at: None,
+            tuner_open: false,
+            tuner_samples: Vec::new(),
+            pitch: None,
             view: View::Board,
             practice: Practice::default(),
             selected: None,
@@ -259,6 +350,10 @@ impl Rig {
             .presets
             .iter()
             .find(|entry| Some(entry.preset.name.as_str()) == last_tone)
+            .or(rig
+                .presets
+                .iter()
+                .find(|entry| entry.preset.name == FIRST_TONE))
             .or(rig.presets.first())
             .map(|entry| entry.preset.clone());
         if let Some(preset) = last_tone {
@@ -275,6 +370,16 @@ impl Rig {
 
     fn tick(&mut self, cx: &mut Context<Self>) {
         self.smoke_phase += METER_INTERVAL.as_secs_f32();
+        if self
+            .settings_save_at
+            .is_some_and(|at| self.smoke_phase >= at)
+        {
+            self.settings_save_at = None;
+            self.save_settings(cx);
+        }
+        if self.tuner_open {
+            self.read_tuner();
+        }
         if let Some(engine) = &mut self.engine {
             engine.drop_retired();
             let meters = engine.meters();
@@ -405,6 +510,7 @@ impl Rig {
             match Engine::start(Box::new(built.chain), &self.engine_config(mode)) {
                 Ok(engine) => {
                     self.engine = Some(engine);
+                    self.apply_levels();
                     if let Some(error) = first_error {
                         self.error = Some(format!("{error}. Using a slower route.").into());
                     }
@@ -418,6 +524,80 @@ impl Rig {
         if let Some(error) = first_error {
             self.set_error(error, cx);
         }
+    }
+
+    fn apply_levels(&mut self) {
+        let tuner_open = self.tuner_open;
+        let input = db_to_gain(self.settings.input_db);
+        let output = db_to_gain(self.settings.output_db);
+        if let Some(engine) = &mut self.engine {
+            engine.send(Command::SetInputGain(input));
+            engine.send(Command::SetOutputGain(output));
+            engine.meters().set_tuner(tuner_open);
+        }
+    }
+
+    fn set_level(&mut self, input: Option<f32>, output: Option<f32>, cx: &mut Context<Self>) {
+        if let Some(db) = input {
+            self.settings.input_db = db;
+        }
+        if let Some(db) = output {
+            self.settings.output_db = db;
+        }
+        self.settings_save_at = Some(self.smoke_phase + SETTINGS_SAVE_DELAY);
+        self.apply_levels();
+        cx.notify();
+    }
+
+    /// Keeps the board as it is now, for Undo.
+    fn remember(&mut self) {
+        self.history.push(self.preset.clone());
+        if self.history.len() > HISTORY {
+            self.history.remove(0);
+        }
+        self.future.clear();
+        self.last_param = None;
+    }
+
+    fn restore(&mut self, preset: Preset, cx: &mut Context<Self>) {
+        self.captures = vec![None; preset.blocks.len()];
+        // Stay on the unit being worked on, if it's still there.
+        self.selected = self.selected.filter(|slot| *slot < preset.blocks.len());
+        self.settings_open &= self.selected.is_some();
+        self.preset = preset;
+        self.last_param = None;
+        self.rebuild_chain(cx);
+    }
+
+    fn undo(&mut self, cx: &mut Context<Self>) {
+        if let Some(preset) = self.history.pop() {
+            self.future
+                .push(std::mem::replace(&mut self.preset, preset.clone()));
+            self.restore(preset, cx);
+        }
+    }
+
+    fn redo(&mut self, cx: &mut Context<Self>) {
+        if let Some(preset) = self.future.pop() {
+            self.history
+                .push(std::mem::replace(&mut self.preset, preset.clone()));
+            self.restore(preset, cx);
+        }
+    }
+
+    fn step_tone(&mut self, step: isize, window: &mut Window, cx: &mut Context<Self>) {
+        let count = self.presets.len() as isize;
+        if count == 0 {
+            return;
+        }
+        let current = self
+            .presets
+            .iter()
+            .position(|entry| entry.preset.name == self.preset.name)
+            .map_or(0, |index| index as isize);
+        let next = (current + step).rem_euclid(count) as usize;
+        let preset = self.presets[next].preset.clone();
+        self.load_preset(preset, window, cx);
     }
 
     fn toggle_shared_audio(&mut self, cx: &mut Context<Self>) {
@@ -435,6 +615,10 @@ impl Rig {
     }
 
     fn set_param(&mut self, slot: usize, param: usize, value: f32, cx: &mut Context<Self>) {
+        if self.last_param != Some((slot, param)) {
+            self.remember();
+            self.last_param = Some((slot, param));
+        }
         let block = &mut self.preset.blocks[slot];
         let id = block.kind.params()[param].id;
         block.params.insert(id.to_owned(), value);
@@ -445,6 +629,7 @@ impl Rig {
     }
 
     fn toggle_block(&mut self, slot: usize, cx: &mut Context<Self>) {
+        self.remember();
         let block = &mut self.preset.blocks[slot];
         block.enabled = !block.enabled;
         let bypassed = !block.enabled;
@@ -522,9 +707,16 @@ impl Rig {
                         });
                         this.settings.last_tone = Some(preset.name.clone());
                         this.save_settings(cx);
+                        this.saved_blocks = preset.blocks.clone();
+                        this.history.clear();
+                        this.future.clear();
+                        this.last_param = None;
+                        // Open on the amp, the first thing most people reach for.
+                        this.selected = preset.blocks.iter().position(|block| {
+                            matches!(block.kind, BlockKind::Amp | BlockKind::Tube)
+                        });
+                        this.settings_open = this.selected.is_some();
                         this.preset = preset;
-                        this.selected = None;
-                        this.settings_open = false;
                         this.adopt_chain(built, cx);
                     }
                     Err(error) => this.set_error(error, cx),
@@ -604,6 +796,7 @@ impl Rig {
                 .import_asset(AssetKind::ImpulseResponse, &path)
             {
                 Ok(asset) => {
+                    this.remember();
                     this.preset.blocks[slot].asset = Some(asset);
                     this.rebuild_chain(cx);
                 }
@@ -616,6 +809,7 @@ impl Rig {
         self.preset.name = self.preset_name.read(cx).value().to_string();
         match self.library.save_preset(&self.preset) {
             Ok(_) => {
+                self.saved_blocks = self.preset.blocks.clone();
                 self.settings.last_tone = Some(self.preset.name.clone());
                 self.save_settings(cx);
                 self.refresh_presets();
@@ -734,7 +928,7 @@ impl Rig {
             .child(picker(
                 "Audio driver",
                 Select::new(&self.driver_select)
-                    .w(px(200.))
+                    .w(px(158.))
                     .into_any_element(),
             ))
             .when(!asio, |bar| {
@@ -742,7 +936,7 @@ impl Rig {
                     "Guitar in",
                     Select::new(&self.input_select)
                         .placeholder("Choose your interface")
-                        .w(px(220.))
+                        .w(px(188.))
                         .into_any_element(),
                 ))
             })
@@ -757,7 +951,7 @@ impl Rig {
                     "Speakers out",
                     Select::new(&self.output_select)
                         .placeholder("Choose an output")
-                        .w(px(220.))
+                        .w(px(188.))
                         .into_any_element(),
                 ))
             })
@@ -786,6 +980,20 @@ impl Rig {
                 )
             })
             .child(div().flex_1())
+            .child(Knob::new(
+                "level-input",
+                KNOB_INPUT,
+                self.settings.input_db,
+                px(34.),
+                cx.listener(|this, value: &f32, _, cx| this.set_level(Some(*value), None, cx)),
+            ))
+            .child(Knob::new(
+                "level-output",
+                KNOB_OUTPUT,
+                self.settings.output_db,
+                px(34.),
+                cx.listener(|this, value: &f32, _, cx| this.set_level(None, Some(*value), cx)),
+            ))
             .child(
                 v_flex()
                     .gap_1()
@@ -823,7 +1031,11 @@ impl Rig {
                 Button::new("save")
                     .small()
                     .primary()
-                    .label("Save tone")
+                    .label(if self.preset.blocks == self.saved_blocks {
+                        "Save tone"
+                    } else {
+                        "Save changes"
+                    })
                     .on_click(cx.listener(|this, _, _, cx| this.save_preset(cx))),
             )
             .child(
@@ -835,9 +1047,11 @@ impl Rig {
                     .gap_1()
                     .children(self.presets.iter().enumerate().map(|(index, entry)| {
                         let preset = entry.preset.clone();
+                        let current = preset.name == self.preset.name;
                         Button::new(("preset", index))
                             .small()
-                            .ghost()
+                            .when(current, |button| button.outline())
+                            .when(!current, |button| button.ghost())
                             .label(entry.preset.name.clone())
                             .on_click(cx.listener(move |this, _, window, cx| {
                                 this.load_preset(preset.clone(), window, cx);
@@ -877,6 +1091,42 @@ impl Rig {
             )
     }
 
+    fn input_is_microphone(&self) -> bool {
+        if self.settings.asio_driver.is_some() {
+            return false;
+        }
+        let input = self.settings.input.as_ref();
+        self.devices
+            .inputs
+            .iter()
+            .find(|device| Some(&device.id) == input)
+            .is_some_and(|device| {
+                let name = device.name.to_lowercase();
+                name.contains("microphone") || name.contains("webcam")
+            })
+    }
+
+    fn render_view_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        h_flex()
+            .justify_between()
+            .items_center()
+            .child(
+                h_flex()
+                    .gap_1()
+                    .child(self.render_tab("tab-board", "Board", View::Board, cx))
+                    .child(self.render_tab("tab-practice", "Practice", View::Practice, cx)),
+            )
+            .child(
+                Button::new("tuner")
+                    .small()
+                    .label("Tuner")
+                    .when(self.tuner_open, |button| button.primary())
+                    .when(!self.tuner_open, |button| button.ghost())
+                    .tooltip("Press T")
+                    .on_click(cx.listener(|this, _, _, cx| this.toggle_tuner(cx))),
+            )
+    }
+
     fn render_tab(
         &self,
         id: &'static str,
@@ -905,6 +1155,28 @@ impl Render for Rig {
         div()
             .relative()
             .size_full()
+            .key_context("Rig")
+            .track_focus(&self.focus)
+            .on_action(cx.listener(|this, _: &Undo, _, cx| this.undo(cx)))
+            .on_action(cx.listener(|this, _: &Redo, _, cx| this.redo(cx)))
+            .on_action(cx.listener(|this, _: &RemoveUnit, _, cx| this.remove_selected(cx)))
+            .on_action(cx.listener(|this, _: &BypassUnit, _, cx| this.bypass_selected(cx)))
+            .on_action(cx.listener(|this, _: &OpenUnit, _, cx| this.open_selected(cx)))
+            .on_action(cx.listener(|this, _: &CloseUnit, _, cx| this.close_selected(cx)))
+            .on_action(cx.listener(|this, _: &PreviousUnit, _, cx| this.select_step(-1, cx)))
+            .on_action(cx.listener(|this, _: &NextUnit, _, cx| this.select_step(1, cx)))
+            .on_action(cx.listener(|this, _: &MoveUnitLeft, _, cx| this.move_selected(-1, cx)))
+            .on_action(cx.listener(|this, _: &MoveUnitRight, _, cx| this.move_selected(1, cx)))
+            .on_action(cx.listener(|this, _: &PreviousTone, window, cx| {
+                this.step_tone(-1, window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &NextTone, window, cx| {
+                this.step_tone(1, window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &ToggleMonitoring, _, cx| {
+                this.toggle_monitoring(cx);
+            }))
+            .on_action(cx.listener(|this, _: &ToggleTuner, _, cx| this.toggle_tuner(cx)))
             .bg(hsla(0.42, 0.3, 0.035, 0.82))
             .text_color(cx.theme().foreground)
             .child(self.render_backdrop())
@@ -915,12 +1187,36 @@ impl Render for Rig {
                     .child(self.render_device_bar(cx))
                     .when_some(self.error.clone(), |column, error| {
                         column.child(
+                            h_flex()
+                                .px_3()
+                                .py_1()
+                                .gap_2()
+                                .items_center()
+                                .justify_between()
+                                .child(div().text_sm().text_color(cx.theme().danger).child(error))
+                                .child(
+                                    Button::new("dismiss-error")
+                                        .small()
+                                        .ghost()
+                                        .label("Dismiss")
+                                        .on_click(cx.listener(|this, _, _, cx| {
+                                            this.error = None;
+                                            cx.notify();
+                                        })),
+                                ),
+                        )
+                    })
+                    .when(self.input_is_microphone(), |column| {
+                        column.child(
                             div()
                                 .px_3()
-                                .py_2()
+                                .py_1()
                                 .text_sm()
-                                .text_color(cx.theme().danger)
-                                .child(error),
+                                .text_color(cx.theme().warning)
+                                .child(
+                                    "Guitar in is set to a microphone, which can feed back through \
+                                     speakers. Choose your interface first.",
+                                ),
                         )
                     })
                     .child(
@@ -949,22 +1245,10 @@ impl Render for Rig {
                                     .overflow_y_scroll()
                                     .gap_4()
                                     .p_4()
-                                    .child(
-                                        h_flex()
-                                            .gap_1()
-                                            .child(self.render_tab(
-                                                "tab-board",
-                                                "Board",
-                                                View::Board,
-                                                cx,
-                                            ))
-                                            .child(self.render_tab(
-                                                "tab-practice",
-                                                "Practice",
-                                                View::Practice,
-                                                cx,
-                                            )),
-                                    )
+                                    .child(self.render_view_bar(cx))
+                                    .when(self.tuner_open, |column| {
+                                        column.child(self.render_tuner(cx))
+                                    })
                                     .child(body)
                                     .child(div().text_xs().text_color(fog()).child(
                                         "Hearing a clean signal under the amp? Turn off direct \

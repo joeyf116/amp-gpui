@@ -17,6 +17,10 @@ pub struct Settings {
     /// monitoring, at the cost of much higher latency.
     #[serde(default)]
     pub shared_audio: bool,
+    #[serde(default)]
+    pub input_db: f32,
+    #[serde(default)]
+    pub output_db: f32,
     /// Set to run through this interface's ASIO driver.
     #[serde(default)]
     pub asio_driver: Option<String>,

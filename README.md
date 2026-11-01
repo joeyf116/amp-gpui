@@ -70,8 +70,28 @@ link a saved tone, so one click loads the right sound for that part. Import a
 plain text file to add a sheet. A line like `[Verse]` starts a new section.
 Sheets are JSON files in the library's `practice` folder.
 
+## Controls
+
+| Action | How |
+| --- | --- |
+| Turn a knob | Drag up or down, or scroll |
+| Fine adjustment | Hold Shift while dragging or scrolling |
+| Reset a knob | Double-click it |
+| Open a unit's settings | Double-click it, or select it and press Enter |
+| Bypass a pedal | Press its footswitch, or select it and press B |
+| Select a unit | Left and Right |
+| Move a unit | Alt+Left and Alt+Right |
+| Remove a unit | Delete, or drag it back to the rack |
+| Undo and redo | Ctrl+Z, and Ctrl+Y or Ctrl+Shift+Z |
+| Previous or next tone | Page Up and Page Down |
+| Start or stop monitoring | M |
+| Tuner | T |
+
 ## Status
 
-Monitoring defaults to WASAPI exclusive mode, which reports about 17 ms on a
-FLOW 8 and takes over the devices while it runs. **Shared audio** in the device
-bar keeps other apps playing, at about 40 ms or more. ASIO is the next step.
+Choose your interface's ASIO driver under **Audio driver** for the lowest
+latency, which reports about 8 ms on a FLOW 8. With **Windows audio**, exclusive
+mode reports about 17 ms and takes over the devices while it runs, and **Shared
+audio** keeps other apps playing at about 40 ms or more. Building ASIO needs
+LLVM, and the first build downloads Steinberg's ASIO SDK. Check Steinberg's
+license terms before distributing an ASIO build.

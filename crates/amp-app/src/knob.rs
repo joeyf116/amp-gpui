@@ -8,16 +8,21 @@ const START_ANGLE: f32 = 0.75 * PI;
 const ARC_STEPS: usize = 48;
 /// Pixels of vertical drag that cover the knob's whole range.
 const DRAG_RANGE: f32 = 180.0;
+/// Holding Shift makes a drag or scroll this much finer.
+const FINE: f32 = 0.2;
+/// How far one notch of a scroll wheel turns the knob.
+const WHEEL_STEP: f32 = 0.02;
 
 type OnChange = Rc<dyn Fn(&f32, &mut Window, &mut App)>;
 
 #[derive(Clone, Copy)]
 struct Drag {
-    start_y: Pixels,
-    start: f32,
+    last_y: Pixels,
+    amount: f32,
 }
 
-/// A round control. Drag up or down to turn it, and double-click to reset.
+/// A round control. Drag up or down to turn it, hold Shift for fine moves,
+/// scroll to nudge it, and double-click to reset.
 #[derive(IntoElement)]
 pub struct Knob {
     id: ElementId,
@@ -97,6 +102,7 @@ impl RenderOnce for Knob {
 
         let press_state = drag.clone();
         let reset = on_change.clone();
+        let wheel = on_change.clone();
         let paint_state = drag.clone();
         let change = on_change.clone();
 
@@ -143,7 +149,7 @@ impl RenderOnce for Knob {
                         if phase != DispatchPhase::Bubble {
                             return;
                         }
-                        let Some(drag) = *moved_state.read(cx) else {
+                        let Some(mut drag) = *moved_state.read(cx) else {
                             return;
                         };
                         if event.pressed_button != Some(MouseButton::Left) {
@@ -154,9 +160,13 @@ impl RenderOnce for Knob {
                             window.refresh();
                             return;
                         }
-                        let moved = (drag.start_y - event.position.y) / px(DRAG_RANGE);
-                        let next = (drag.start + moved).clamp(0.0, 1.0);
-                        let value = spec.min + next * (spec.max - spec.min);
+                        // Measured step by step, so pressing Shift mid-drag doesn't jump.
+                        let scale = if event.modifiers.shift { FINE } else { 1.0 };
+                        let moved = (drag.last_y - event.position.y) / px(DRAG_RANGE);
+                        drag.amount = (drag.amount + moved * scale).clamp(0.0, 1.0);
+                        drag.last_y = event.position.y;
+                        moved_state.update(cx, |state, _| *state = Some(drag));
+                        let value = spec.min + drag.amount * (spec.max - spec.min);
                         change(&value, window, cx);
                     });
                     let released_state = paint_state.clone();
@@ -186,6 +196,12 @@ impl RenderOnce for Knob {
                     .id(id)
                     .size(size)
                     .cursor_ns_resize()
+                    .on_scroll_wheel(move |event, window, cx| {
+                        let notches = event.delta.pixel_delta(px(20.0)).y / px(20.0);
+                        let scale = if event.modifiers.shift { FINE } else { 1.0 };
+                        let next = (amount + notches * WHEEL_STEP * scale).clamp(0.0, 1.0);
+                        wheel(&(spec.min + next * (spec.max - spec.min)), window, cx);
+                    })
                     .on_mouse_down(MouseButton::Left, move |event, window, cx| {
                         if event.click_count == 2 {
                             reset(&spec.default, window, cx);
@@ -193,8 +209,8 @@ impl RenderOnce for Knob {
                         }
                         press_state.update(cx, |state, cx| {
                             *state = Some(Drag {
-                                start_y: event.position.y,
-                                start: amount,
+                                last_y: event.position.y,
+                                amount,
                             });
                             cx.notify();
                         });
