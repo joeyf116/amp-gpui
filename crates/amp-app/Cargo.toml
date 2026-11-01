@@ -18,9 +18,11 @@ asio = ["amp-engine/asio"]
 winresource = "0.1.34"
 
 [dependencies]
+amp-assistant.workspace = true
 amp-dsp.workspace = true
 amp-engine.workspace = true
 amp-preset.workspace = true
+amp-secret.workspace = true
 amp-tone3000.workspace = true
 directories.workspace = true
 gpui-kit.workspace = true

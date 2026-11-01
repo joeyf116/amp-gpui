@@ -4,7 +4,7 @@
 //! explaining a filter needs. Tones load as they're clicked or arrowed to, so they
 //! can be compared by ear with the guitar in hand.
 
-use super::{Overlay, Rig, board::block_art};
+use super::{Overlay, Rig, board::block_art, close_button};
 use crate::{
     art::{self, PRINT_FONT},
     style::{fog, hairline, moss, moss_glow, sheet},
@@ -520,10 +520,24 @@ impl Rig {
                     .pb_2()
                     .when(rows.is_empty(), |list| {
                         list.child(
-                            div()
+                            v_flex()
+                                .gap_2()
+                                .items_start()
                                 .p_4()
-                                .text_color(fog())
-                                .child("No tones match. Try clearing a filter."),
+                                .child(
+                                    div()
+                                        .text_color(fog())
+                                        .child("No tones match. Try clearing a filter."),
+                                )
+                                .child(
+                                    Button::new("ask-assistant")
+                                        .small()
+                                        .outline()
+                                        .label("Ask the assistant")
+                                        .on_click(cx.listener(|this, _, window, cx| {
+                                            this.ask_about_search(window, cx);
+                                        })),
+                                ),
                         )
                     })
                     .children(rows),
@@ -671,6 +685,20 @@ impl Rig {
             })
     }
 
+    /// Carries what was searched for over to the assistant, ready to send.
+    fn ask_about_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let search = self.search_text(cx);
+        self.close_overlay(window, cx);
+        if !self.assistant.open {
+            self.toggle_assistant(window, cx);
+        }
+        if !search.is_empty() {
+            self.assistant.input.update(cx, |input, cx| {
+                input.set_value(format!("Make me a tone like: {search}"), window, cx);
+            });
+        }
+    }
+
     /// Takes the loaded tone out of the library. It stays on the rig, marked as
     /// unsaved, so a mistake is one Save away from undone.
     fn delete_tone(&mut self, cx: &mut Context<Self>) {
@@ -753,15 +781,7 @@ impl Rig {
                     .border_b_1()
                     .border_color(hairline())
                     .child(div().font_semibold().child("Tone Explorer"))
-                    .child(
-                        Button::new("close-explorer")
-                            .small()
-                            .ghost()
-                            .label("Close")
-                            .on_click(cx.listener(|this, _, window, cx| {
-                                this.close_overlay(window, cx);
-                            })),
-                    ),
+                    .child(close_button("close-explorer", cx)),
             )
             .child(
                 h_flex()

@@ -5,7 +5,7 @@ use super::{HEADER_HEIGHT, KNOB_INPUT, KNOB_OUTPUT, METER_FLOOR_DB, Rig};
 use crate::{
     art::{self, PRINT_FONT},
     knob::Knob,
-    style::{bar, fog, glow, hairline, moss},
+    style::{bar, fog, glow, hairline, moss, well},
 };
 use gpui_kit::{
     component::{
@@ -66,7 +66,7 @@ impl Rig {
                     .rounded_md()
                     .border_1()
                     .border_color(hairline())
-                    .bg(hsla(0.42, 0.05, 0.04, 0.8))
+                    .bg(well())
                     .cursor_pointer()
                     .hover(|tone| tone.border_color(moss()))
                     .child(
@@ -178,7 +178,7 @@ impl Rig {
                             .ghost()
                             .label("Undo")
                             .disabled(self.history.is_empty())
-                            .on_click(cx.listener(|this, _, _, cx| this.undo(cx))),
+                            .on_click(cx.listener(|this, _, window, cx| this.undo(window, cx))),
                     )
                     .child(
                         Button::new("redo")
@@ -186,10 +186,21 @@ impl Rig {
                             .ghost()
                             .label("Redo")
                             .disabled(self.future.is_empty())
-                            .on_click(cx.listener(|this, _, _, cx| this.redo(cx))),
+                            .on_click(cx.listener(|this, _, window, cx| this.redo(window, cx))),
                     ),
             )
             .child(div().flex_1())
+            .child(
+                Button::new("assistant")
+                    .small()
+                    .when(self.assistant.open, |button| button.outline())
+                    .when(!self.assistant.open, |button| button.ghost())
+                    .label("Assistant")
+                    .tooltip("Ask for a tone (Ctrl+J)")
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        this.toggle_assistant(window, cx);
+                    })),
+            )
             .child(self.render_level(input, self.input_level, cx))
             .child(self.render_level(output, self.output_level, cx))
             .child(

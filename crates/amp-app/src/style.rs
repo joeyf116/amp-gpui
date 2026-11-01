@@ -13,6 +13,16 @@ pub fn moss_glow(alpha: f32) -> Hsla {
     hsla(0.41, 0.6, 0.62, alpha)
 }
 
+/// Behind everything, before the forest loads.
+pub fn window() -> Hsla {
+    hsla(0.42, 0.05, 0.065, 1.0)
+}
+
+/// Sunk into a bar, like the tone name.
+pub fn well() -> Hsla {
+    hsla(0.42, 0.05, 0.04, 0.8)
+}
+
 pub fn pane() -> Hsla {
     hsla(0.42, 0.05, 0.075, 0.78)
 }

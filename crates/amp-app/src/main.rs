@@ -13,7 +13,24 @@ use std::rc::Rc;
 const THEME: &str = include_str!("../assets/theme.json");
 use rig::Rig;
 
+/// Writes panics to a file beside the settings. The installed app has no
+/// console, so this is the only trace a crash leaves.
+fn log_panics() {
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let report = format!("Amp GPUI {}: {info}\n", env!("CARGO_PKG_VERSION"));
+        let path = settings::data_dir().join("crash.log");
+        let _ = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)
+            .and_then(|mut file| std::io::Write::write_all(&mut file, report.as_bytes()));
+        default_hook(info);
+    }));
+}
+
 fn main() {
+    log_panics();
     gpui_kit::application().run(|cx| {
         gpui_kit::init(cx);
         rig::bind_keys(cx);
