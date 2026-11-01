@@ -4,16 +4,19 @@ site_description = "A desktop guitar amp and effects rig written in Rust, with N
 site_url = "https://joeyf116.github.io/amp-gpui/"
 repo_url = "https://github.com/joeyf116/amp-gpui"
 repo_name = "joeyf116/amp-gpui"
+copyright = "GPLv3. ASIO is a registered trademark of Steinberg Media Technologies GmbH."
 edit_uri = "edit/main/docs/"
-extra_css = ["stylesheets/forest.css", "stylesheets/generator.css"]
+extra_css = ["stylesheets/forest.css", "stylesheets/generator.css", "stylesheets/download.css"]
 
 nav = [
   { "Home" = "index.md" },
+  { "Download" = "download.md" },
   { "User guide" = [
     "guide/index.md",
     { "Install" = "guide/install.md" },
     { "Connect your interface" = "guide/setup.md" },
     { "Monitoring and latency" = "guide/monitoring.md" },
+    { "Low latency setup" = "guide/low-latency.md" },
     { "Load and save tones" = "guide/tones.md" },
     { "Build a rig" = "guide/board.md" },
     { "Find tones on TONE3000" = "guide/tone3000.md" },

@@ -68,3 +68,5 @@ flowchart LR
 - [Block reference](blocks.md): what's inside each block, with parameter ranges
 - [Presets and the library](presets.md): file formats and sharing
 - [Work on the code](contributing.md): building, testing, and adding a block
+
+<small>![ASIO compatible](../assets/asio-compatible.png){ .asio-logo width="80" }<br>ASIO is a registered trademark of Steinberg Media Technologies GmbH.</small>

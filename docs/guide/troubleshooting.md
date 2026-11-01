@@ -79,3 +79,5 @@ after export, so ask for a fresh pack. The app won't import part of a pack.
 ## A tone "needs a newer version of this app"
 
 The tone was saved by a newer version. Pull the latest code and rebuild.
+
+<small>![ASIO compatible](../assets/asio-compatible.png){ .asio-logo width="80" }<br>ASIO is a registered trademark of Steinberg Media Technologies GmbH.</small>

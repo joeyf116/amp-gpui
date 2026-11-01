@@ -4,6 +4,8 @@ Latency is the gap between picking a note and hearing it. It's the reason this
 app exists in its current shape: past about 10 to 15 ms, a guitar stops feeling
 connected to your hands.
 
+For the steps on their own, see [Low latency setup](low-latency.md).
+
 ## The three routes
 
 | Route | Reported latency | Other apps' sound | Needs |
@@ -67,3 +69,5 @@ While monitoring, this line appears under the meters:
 If the queue runs dry, the app makes it slightly bigger to stop the glitching.
 That extra delay lasts until you restart monitoring, so press ++m++ twice after
 fixing whatever was causing dropouts.
+
+<small>![ASIO compatible](../assets/asio-compatible.png){ .asio-logo width="80" }<br>ASIO is a registered trademark of Steinberg Media Technologies GmbH.</small>

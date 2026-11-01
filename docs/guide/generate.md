@@ -8,9 +8,9 @@ import it into Amp GPUI.
   <p>The tone generator needs JavaScript.</p>
 </div>
 
-<script src="../../assets/generator/catalog.js"></script>
-<script src="../../assets/generator/core.js"></script>
-<script src="../../assets/generator/ui.js"></script>
+<script src="../assets/generator/catalog.js"></script>
+<script src="../assets/generator/core.js"></script>
+<script src="../assets/generator/ui.js"></script>
 
 ## Add it to the app
 

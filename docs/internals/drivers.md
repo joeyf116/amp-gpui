@@ -57,9 +57,10 @@ The feature needs LLVM, because `cpal` generates its bindings with `libclang`. T
 `.cargo/config.toml` file points `LIBCLANG_PATH` at the default install folder.
 The first build downloads Steinberg's ASIO SDK.
 
-!!! warning "Distribution"
+!!! note "Distribution"
 
-    Check Steinberg's license terms before distributing an ASIO build.
+    The app uses the SDK under its GPLv3 option, which is why the app is GPLv3.
+    See `packaging/README.md` for what that means for releases.
 
 ## Fallback
 
@@ -77,3 +78,5 @@ microphone next to speakers.
 ```bash
 cargo run -p amp-engine --example device_check -- --run --input "Mic 1" --output "USB Out 1/2"
 ```
+
+<small>![ASIO compatible](../assets/asio-compatible.png){ .asio-logo width="80" }<br>ASIO is a registered trademark of Steinberg Media Technologies GmbH.</small>

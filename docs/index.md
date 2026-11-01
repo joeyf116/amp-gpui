@@ -50,3 +50,5 @@ Tones live in a plain folder that you own and can share however you like.
     The low-latency audio code is written for Windows, and that's the only
     platform the app builds and runs on today. There are no prebuilt downloads
     yet, so you [build it from source](guide/install.md).
+
+<small>![ASIO compatible](assets/asio-compatible.png){ .asio-logo width="80" }<br>ASIO is a registered trademark of Steinberg Media Technologies GmbH.</small>

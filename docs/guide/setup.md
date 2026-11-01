@@ -60,3 +60,5 @@ Check the **Input** and **Output** meters at the top right while you play:
 The app remembers your devices and levels for next time.
 
 Next, [get your latency down](monitoring.md).
+
+<small>![ASIO compatible](../assets/asio-compatible.png){ .asio-logo width="80" }<br>ASIO is a registered trademark of Steinberg Media Technologies GmbH.</small>

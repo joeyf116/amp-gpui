@@ -100,5 +100,11 @@ Choose your interface's ASIO driver under **Audio driver** for the lowest
 latency, which reports about 8 ms on a FLOW 8. With **Windows audio**, exclusive
 mode reports about 17 ms and takes over the devices while it runs, and **Shared
 audio** keeps other apps playing at about 40 ms or more. Building ASIO needs
-LLVM, and the first build downloads Steinberg's ASIO SDK. Check Steinberg's
-license terms before distributing an ASIO build.
+LLVM, and the first build downloads Steinberg's ASIO SDK.
+
+## License
+
+Amp GPUI is free software under the [GNU General Public License, version 3](LICENSE).
+It uses the Steinberg ASIO SDK under that license's terms.
+
+ASIO is a registered trademark of Steinberg Media Technologies GmbH.

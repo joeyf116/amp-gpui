@@ -95,3 +95,5 @@ The readout is three numbers added together (`Latency` in
 
 Only what the drivers report is counted, so the true total can be higher,
 especially when something downstream adds its own delay.
+
+<small>![ASIO compatible](../assets/asio-compatible.png){ .asio-logo width="80" }<br>ASIO is a registered trademark of Steinberg Media Technologies GmbH.</small>

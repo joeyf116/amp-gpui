@@ -1,7 +1,8 @@
 # Install
 
-There are no prebuilt downloads yet, so you build the app from source. It takes
-one setup step per tool, and the first build takes a while.
+The quickest way in is the installer on the [Download](../download.md) page. To
+build from source instead, there is one setup step per tool, and the first build
+takes a while.
 
 ## What to install
 
@@ -59,3 +60,5 @@ You can move the library anywhere with the **Folder** button. See
 [Share tones](sharing.md).
 
 Next, [connect your interface](setup.md).
+
+<small>![ASIO compatible](../assets/asio-compatible.png){ .asio-logo width="80" }<br>ASIO is a registered trademark of Steinberg Media Technologies GmbH.</small>

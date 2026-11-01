@@ -4,6 +4,7 @@ description = "Connects the signal chain to audio devices and the UI thread"
 version.workspace = true
 edition.workspace = true
 publish.workspace = true
+license.workspace = true
 
 [features]
 # Needs LLVM to build, and downloads Steinberg's ASIO SDK the first time.
