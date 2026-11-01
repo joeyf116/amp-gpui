@@ -318,7 +318,10 @@ mod tests {
         let pack = directory.0.join("pack");
         mine.export_pack(&preset, &pack).unwrap();
 
-        assert_eq!(theirs.import_pack(&pack).unwrap(), [preset.clone()]);
+        assert_eq!(
+            theirs.import_pack(&pack).unwrap(),
+            std::slice::from_ref(&preset)
+        );
         let asset = preset.blocks[2].asset.as_ref().unwrap();
         assert_eq!(
             fs::read(theirs.asset_path(asset).unwrap()).unwrap(),

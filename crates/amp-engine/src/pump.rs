@@ -133,7 +133,6 @@ impl Pump {
 mod tests {
     use super::*;
     use crate::processor;
-    use amp_dsp::Chain;
     use rtrb::{Producer, RingBuffer};
 
     struct Rig {
@@ -148,7 +147,7 @@ mod tests {
         for _ in 0..Pump::start_frames() {
             tx.push(0.0).unwrap();
         }
-        let (processor, controller) = processor(Box::new(Chain::default()));
+        let (processor, controller) = processor(Box::default());
         let meters = controller.meters.clone();
         let pump = Pump::new(rx, processor, meters.clone(), input_rate, output_rate);
         std::mem::forget(controller);

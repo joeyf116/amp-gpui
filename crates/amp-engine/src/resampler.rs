@@ -52,12 +52,12 @@ mod tests {
     #[test]
     fn consumes_input_at_the_ratio() {
         let mut resampler = Resampler::default();
-        let mut pulled = 0;
+        let mut pulled = 0_i32;
         let mut output = vec![0.0; 48_000];
         resampler.process(44_100.0 / 48_000.0, &mut output, || {
             pulled += 1;
             0.0
         });
-        assert!((pulled as i32 - 44_100).abs() <= 2, "pulled {pulled}");
+        assert!((pulled - 44_100).abs() <= 2, "pulled {pulled}");
     }
 }
