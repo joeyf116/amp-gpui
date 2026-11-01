@@ -185,6 +185,7 @@ impl Rig {
                 Ok(engine) => {
                     self.engine = Some(engine);
                     self.apply_levels();
+                    self.send_song();
                     if let Some(error) = first_error {
                         self.error = Some(format!("{error}. Using a slower route.").into());
                     }

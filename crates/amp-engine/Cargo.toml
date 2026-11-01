@@ -14,7 +14,11 @@ asio = ["cpal/asio"]
 amp-dsp.workspace = true
 cpal.workspace = true
 rtrb.workspace = true
+symphonia.workspace = true
 thiserror.workspace = true
+
+[dev-dependencies]
+hound.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 windows.workspace = true

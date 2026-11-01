@@ -1,10 +1,10 @@
 use crate::pump::ENGINE_RATE;
-use amp_dsp::{Chain, Click, Metronome};
+use amp_dsp::{Chain, Click, Metronome, SongPlayer};
 use rtrb::{Consumer, Producer, RingBuffer};
 use std::{
     sync::{
         Arc,
-        atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize, Ordering},
     },
     time::Duration,
 };
@@ -42,6 +42,13 @@ pub enum Command {
     SetChain(Box<Chain>),
     /// Starts, stops, or changes the metronome.
     SetClick(Click),
+    /// Loads a song to play along with, from its start.
+    LoadSong(Arc<[f32]>),
+    SetSongPlaying(bool),
+    /// Moves the song, in samples from its start.
+    SeekSong(usize),
+    /// The song's level, as a linear gain.
+    SetSongLevel(f32),
 }
 
 /// Levels and health the audio thread publishes for the UI to poll.
@@ -55,6 +62,7 @@ pub struct Meters {
     output_device_us: AtomicU32,
     tuner_on: AtomicBool,
     beat: AtomicU32,
+    song_position: AtomicUsize,
 }
 
 /// Where the delay between string and speaker goes. Only what the drivers
@@ -81,6 +89,11 @@ impl Meters {
     /// The metronome's current beat, counted from 1, or 0 while it's stopped.
     pub fn beat(&self) -> u32 {
         self.beat.load(Ordering::Relaxed)
+    }
+
+    /// How far the song has played, in samples from its start.
+    pub fn song_position(&self) -> usize {
+        self.song_position.load(Ordering::Relaxed)
     }
 
     pub fn latency(&self) -> Latency {
@@ -136,6 +149,7 @@ impl Meters {
 pub struct Controller {
     commands: Producer<Command>,
     retired: Consumer<Box<Chain>>,
+    retired_songs: Consumer<Arc<[f32]>>,
     tuner: Consumer<f32>,
     pub meters: Arc<Meters>,
 }
@@ -156,10 +170,11 @@ impl Controller {
         }
     }
 
-    /// Frees chains the audio thread has finished with. Call this regularly
-    /// from the UI thread.
+    /// Frees chains and songs the audio thread has finished with. Call this
+    /// regularly from the UI thread.
     pub fn drop_retired(&mut self) {
         while self.retired.pop().is_ok() {}
+        while self.retired_songs.pop().is_ok() {}
     }
 }
 
@@ -171,12 +186,16 @@ pub struct Processor {
     /// A chain waiting for room in `retired`. Dropping it here would free
     /// memory on the audio thread, so it waits until the queue has space.
     pending_retire: Option<Box<Chain>>,
+    retired_songs: Producer<Arc<[f32]>>,
+    /// A song waiting for room, for the same reason as `pending_retire`.
+    pending_song: Option<Arc<[f32]>>,
     fade: Option<Fade>,
     fade_scratch: Vec<f32>,
     tuner: Producer<f32>,
     input_gain: Ramp,
     output_gain: Ramp,
     metronome: Metronome,
+    song: SongPlayer,
     meters: Arc<Meters>,
 }
 
@@ -222,6 +241,7 @@ struct Fade {
 pub fn processor(chain: Box<Chain>) -> (Processor, Controller) {
     let (command_tx, command_rx) = RingBuffer::new(COMMAND_CAPACITY);
     let (retired_tx, retired_rx) = RingBuffer::new(RETIRED_CAPACITY);
+    let (songs_tx, songs_rx) = RingBuffer::new(RETIRED_CAPACITY);
     let (tuner_tx, tuner_rx) = RingBuffer::new(TUNER_CAPACITY);
     let meters = Arc::new(Meters::default());
     (
@@ -230,17 +250,21 @@ pub fn processor(chain: Box<Chain>) -> (Processor, Controller) {
             commands: command_rx,
             retired: retired_tx,
             pending_retire: None,
+            retired_songs: songs_tx,
+            pending_song: None,
             fade: None,
             fade_scratch: vec![0.0; FADE_SCRATCH],
             tuner: tuner_tx,
             input_gain: Ramp::new(),
             output_gain: Ramp::new(),
             metronome: Metronome::new(ENGINE_RATE as f32),
+            song: SongPlayer::default(),
             meters: meters.clone(),
         },
         Controller {
             commands: command_tx,
             retired: retired_rx,
+            retired_songs: songs_rx,
             tuner: tuner_rx,
             meters,
         },
@@ -269,11 +293,15 @@ impl Processor {
         for sample in buffer.iter_mut() {
             *sample *= self.output_gain.next();
         }
-        // After the Output level, so turning the rig down leaves the click alone.
+        // After the Output level, so turning the rig down leaves these alone.
         self.metronome.mix(buffer);
+        self.song.mix(buffer);
         self.meters
             .beat
             .store(self.metronome.beat(), Ordering::Relaxed);
+        self.meters
+            .song_position
+            .store(self.song.position(), Ordering::Relaxed);
         for sample in buffer.iter_mut() {
             *sample = limit(*sample);
         }
@@ -284,8 +312,11 @@ impl Processor {
         if let Some(chain) = self.pending_retire.take() {
             self.retire(chain);
         }
-        // Only take a new chain once the old one has somewhere to go.
-        while self.pending_retire.is_none() {
+        if let Some(song) = self.pending_song.take() {
+            self.retire_song(song);
+        }
+        // Only take a new chain or song once the old one has somewhere to go.
+        while self.pending_retire.is_none() && self.pending_song.is_none() {
             let Ok(command) = self.commands.pop() else {
                 break;
             };
@@ -299,6 +330,14 @@ impl Processor {
                 Command::SetInputGain(gain) => self.input_gain.target = gain,
                 Command::SetOutputGain(gain) => self.output_gain.target = gain,
                 Command::SetClick(click) => self.metronome.set(click),
+                Command::LoadSong(track) => {
+                    if let Some(old) = self.song.load(track) {
+                        self.retire_song(old);
+                    }
+                }
+                Command::SetSongPlaying(playing) => self.song.set_playing(playing),
+                Command::SeekSong(position) => self.song.seek(position),
+                Command::SetSongLevel(level) => self.song.set_level(level),
                 Command::SetChain(chain) => {
                     let old = std::mem::replace(&mut self.chain, chain);
                     if let Some(fade) = self.fade.take() {
@@ -334,6 +373,12 @@ impl Processor {
     fn retire(&mut self, chain: Box<Chain>) {
         if let Err(rtrb::PushError::Full(chain)) = self.retired.push(chain) {
             self.pending_retire = Some(chain);
+        }
+    }
+
+    fn retire_song(&mut self, song: Arc<[f32]>) {
+        if let Err(rtrb::PushError::Full(song)) = self.retired_songs.push(song) {
+            self.pending_song = Some(song);
         }
     }
 }
@@ -475,6 +520,40 @@ mod tests {
         processor.process(&mut buffer);
         assert!(buffer.iter().any(|sample| sample.abs() > 0.1));
         assert_eq!(controller.meters.beat(), 1);
+    }
+
+    #[test]
+    fn a_song_plays_over_a_silenced_rig_and_reports_where_it_is() {
+        let (mut processor, mut controller) = processor(scale_chain(1.0));
+        let song: Arc<[f32]> = vec![0.5; 48_000].into();
+        for command in [
+            Command::SetOutputGain(0.0),
+            Command::LoadSong(song),
+            Command::SetSongLevel(1.0),
+            Command::SetSongPlaying(true),
+        ] {
+            assert!(controller.send(command).is_ok());
+        }
+        let mut buffer = [0.0; 4_096];
+        processor.process(&mut buffer);
+        assert!(buffer[4_095] > 0.4);
+        assert_eq!(controller.meters.song_position(), 4_096);
+    }
+
+    #[test]
+    fn an_old_song_goes_back_to_the_ui_thread() {
+        let (mut processor, mut controller) = processor(scale_chain(1.0));
+        let first: Arc<[f32]> = vec![0.0; 16].into();
+        assert!(controller.send(Command::LoadSong(first.clone())).is_ok());
+        assert!(
+            controller
+                .send(Command::LoadSong(vec![0.0; 8].into()))
+                .is_ok()
+        );
+        processor.process(&mut [0.0]);
+        assert_eq!(Arc::strong_count(&first), 2);
+        controller.drop_retired();
+        assert_eq!(Arc::strong_count(&first), 1);
     }
 
     #[test]

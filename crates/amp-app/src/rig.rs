@@ -6,6 +6,7 @@ mod explorer;
 mod fretboard;
 mod header;
 mod keys;
+mod song;
 mod tone3000;
 mod tones;
 mod tools;

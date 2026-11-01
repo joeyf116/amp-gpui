@@ -57,7 +57,7 @@ pub fn midi_hertz(midi: i32) -> f32 {
 }
 
 /// An in-place radix-2 FFT. `re` and `im` must be a power of two long.
-fn fft(re: &mut [f32], im: &mut [f32]) {
+pub(crate) fn fft(re: &mut [f32], im: &mut [f32]) {
     let size = re.len();
     let mut target = 0;
     for index in 1..size {
