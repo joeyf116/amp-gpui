@@ -36,21 +36,10 @@ jobs:
       version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v7
-      # Windows Defender slows every file the compiler touches on C:, and a Dev
-      # Drive skips most of that.
-      - uses: samypr100/setup-dev-drive@v4
-        with:
-          drive-size: 20GB
-          workspace-copy: true
-          env-mapping: |
-            CARGO_HOME,{{ DEV_DRIVE }}/.cargo
-            RUSTUP_HOME,{{ DEV_DRIVE }}/.rustup
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: ${{ env.DEV_DRIVE_WORKSPACE }}
           shared-key: release
-          cache-on-failure: true
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-about
@@ -58,7 +47,6 @@ jobs:
       # The app is GPLv3, so each release carries the SDK source it was built
       # from. See packaging/README.md.
       - shell: bash
-        working-directory: ${{ env.DEV_DRIVE_WORKSPACE }}
         run: |
           curl -sSfL -o asio-sdk.zip https://www.steinberg.net/asiosdk
           unzip -q asio-sdk.zip -d asio-sdk
@@ -68,7 +56,6 @@ jobs:
 
       - id: version
         shell: bash
-        working-directory: ${{ env.DEV_DRIVE_WORKSPACE }}
         run: |
           version=$(cargo metadata --no-deps --format-version 1 |
             jq -r '.packages[] | select(.name == "amp-app") | .version')
@@ -78,36 +65,31 @@ jobs:
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
-      - working-directory: ${{ env.DEV_DRIVE_WORKSPACE }}
-        run: >
+      - run: >
           cargo test --release --locked
           -p amp-dsp -p amp-engine -p amp-preset -p amp-tone3000
 
       # The subsystem is set here so the installed app opens no console window,
       # while `cargo run` keeps its log output.
-      - working-directory: ${{ env.DEV_DRIVE_WORKSPACE }}
-        run: >
+      - run: >
           cargo rustc -p amp-app --release --locked --bin amp-gpui --
           -C link-arg=/SUBSYSTEM:WINDOWS -C link-arg=/ENTRY:mainCRTStartup
 
-      - working-directory: ${{ env.DEV_DRIVE_WORKSPACE }}
-        run: >
+      - run: >
           cargo about generate --workspace --locked
           --config packaging/about.toml
           --output-file target/release/THIRD-PARTY-LICENSES.html
           packaging/about.hbs
 
-      - working-directory: ${{ env.DEV_DRIVE_WORKSPACE }}
-        run: |
+      - run: |
           iscc /DAppVersion=${{ steps.version.outputs.version }} "/O$PWD\dist" packaging\amp-gpui.iss
           iscc /DAppVersion=0.0.1 "/O$PWD\target\old-installer" packaging\amp-gpui.iss
 
       - shell: bash
-        working-directory: ${{ env.DEV_DRIVE_WORKSPACE }}/dist
+        working-directory: dist
         run: sha256sum amp-gpui-setup.exe > amp-gpui-setup.exe.sha256
 
       - shell: pwsh
-        working-directory: ${{ env.DEV_DRIVE_WORKSPACE }}
         run: >
           packaging/test-installer.ps1
           -Installer dist/amp-gpui-setup.exe
@@ -117,7 +99,7 @@ jobs:
       - uses: actions/upload-artifact@v5
         with:
           name: installer
-          path: ${{ env.DEV_DRIVE_WORKSPACE }}/dist/*
+          path: dist/*
           if-no-files-found: error
 
   publish:
