@@ -285,6 +285,7 @@ impl Rig {
                         }
                     })),
             )
+            .children(self.render_update(cx))
             .child(div().flex_1())
             .when(self.metronome_on, |bar| {
                 bar.child(

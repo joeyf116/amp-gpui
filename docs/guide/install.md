@@ -18,6 +18,18 @@ takes a while.
     The build looks for it in `C:\Program Files\LLVM\bin`. If you installed it
     somewhere else, set `LIBCLANG_PATH` to that folder.
 
+## Update
+
+The app asks GitHub for the latest release when it starts, a few seconds after opening.
+That request sends nothing about you beyond what any web request does. When there's a
+new version, an **Update to** button appears in the footer. Press it and the app
+downloads the installer, checks it against the checksum GitHub reports, closes, installs
+over itself, and reopens. Your settings and tones stay put. If the current tone has
+unsaved edits, it asks you to press again first.
+
+To turn the check off, set `check_updates` to `false` in `settings.json`. Versions before
+0.2.0 can't update themselves, so get that one from the [Download](../download.md) page.
+
 ## Build and run
 
 From PowerShell, not Git Bash, because Git Bash puts its own `link.exe` ahead of

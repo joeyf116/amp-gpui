@@ -49,5 +49,13 @@ Name: "{autodesktop}\Amp GPUI"; Filename: "{app}\amp-gpui.exe"; Tasks: desktopic
 
 [Run]
 Filename: "{app}\amp-gpui.exe"; Description: "Start Amp GPUI"; Flags: nowait postinstall skipifsilent
+; The in-app updater runs silently, so it asks for the app back this way.
+Filename: "{app}\amp-gpui.exe"; Flags: nowait; Check: Relaunching
 
 ; Settings and tones live in %APPDATA%, and uninstalling leaves them there.
+
+[Code]
+function Relaunching: Boolean;
+begin
+  Result := ExpandConstant('{param:relaunch|0}') = '1';
+end;

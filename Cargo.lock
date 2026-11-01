@@ -179,7 +179,7 @@ dependencies = [
 
 [[package]]
 name = "amp-app"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "amp-assistant",
  "amp-dsp",
@@ -191,12 +191,14 @@ dependencies = [
  "gpui-kit",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
+ "ureq",
  "winresource",
 ]
 
 [[package]]
 name = "amp-assistant"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "amp-dsp",
  "amp-preset",
@@ -211,7 +213,7 @@ dependencies = [
 
 [[package]]
 name = "amp-dsp"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "fft-convolver",
  "hound",
@@ -222,7 +224,7 @@ dependencies = [
 
 [[package]]
 name = "amp-engine"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "amp-dsp",
  "cpal",
@@ -236,7 +238,7 @@ dependencies = [
 
 [[package]]
 name = "amp-preset"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "amp-dsp",
  "serde",
@@ -247,14 +249,14 @@ dependencies = [
 
 [[package]]
 name = "amp-secret"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "windows 0.62.2",
 ]
 
 [[package]]
 name = "amp-tone3000"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "amp-secret",
  "base64 0.22.1",

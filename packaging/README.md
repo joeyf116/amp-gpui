@@ -30,6 +30,46 @@ installer lands on the run page as an artifact.
 Every build also runs `test-installer.ps1`, which installs, upgrades from an older
 version, starts the app, and uninstalls.
 
+## Updates
+
+The app's footer offers a newer release (`crates/amp-app/src/rig/update.rs`). It reads
+`releases/latest` from the GitHub API, so prereleases are skipped, and it needs the
+release to have `amp-gpui-setup.exe` with GitHub's asset digest. It runs the installer
+with `/relaunch=1`, which `amp-gpui.iss` uses to reopen the app after a silent install.
+The version in `Cargo.toml` is what it compares against, so a release has to bump it.
+
+## Code signing
+
+Tag builds sign the installer through the
+[SignPath Foundation](https://signpath.org/) free program once
+`SIGNPATH_ORGANIZATION_ID` is set. Without it, builds carry on unsigned. Only the
+installer is signed, so each release needs one approval, not two. The certificate
+names SignPath Foundation as the publisher, not this project.
+
+Setting it up, once the application is accepted:
+
+1. In SignPath, create project `amp-gpui`, connected to this repository with the
+   GitHub Actions trusted build system, a signing policy `release-signing`, and an
+   artifact configuration `installer`:
+
+    ```xml
+    <?xml version="1.0" encoding="utf-8"?>
+    <artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+      <zip-file>
+        <pe-file path="amp-gpui-setup.exe">
+          <authenticode-sign/>
+        </pe-file>
+      </zip-file>
+    </artifact-configuration>
+    ```
+
+2. Create a CI user with submitter rights on that policy, and add its API token as the
+   repository secret `SIGNPATH_API_TOKEN`.
+3. Add the organization ID as the repository variable `SIGNPATH_ORGANIZATION_ID`.
+
+The next tag then stops at the signing step until someone approves the request on
+SignPath. It waits for up to an hour.
+
 ## ASIO
 
 Installers include ASIO, using Steinberg's ASIO SDK under its GPLv3 option. That's

@@ -12,6 +12,7 @@ mod song_view;
 mod tone3000;
 mod tones;
 mod tools;
+mod update;
 
 use crate::{
     knob::Knob,
@@ -41,6 +42,7 @@ pub use keys::bind_keys;
 use keys::*;
 use std::time::{Duration, Instant};
 use tone3000::Tone3000;
+use update::Update;
 
 const METER_INTERVAL: Duration = Duration::from_millis(50);
 const METER_FLOOR_DB: f32 = -60.0;
@@ -129,6 +131,7 @@ pub struct Rig {
     explorer: Explorer,
     fretboard: Fretboard,
     tone3000: Tone3000,
+    update: Update,
     assistant: Assistant,
     gear_open: bool,
 
@@ -285,6 +288,7 @@ impl Rig {
             explorer,
             fretboard,
             tone3000: Tone3000::new(),
+            update: Update::default(),
             assistant,
             gear_open: false,
             selected: None,
@@ -306,6 +310,7 @@ impl Rig {
             _meter_timer: meter_timer,
         };
         rig.refresh_presets();
+        rig.check_for_update(cx);
         rig.refresh_catalog();
         let last_tone = rig.settings.last_tone.as_deref();
         let last_tone = rig

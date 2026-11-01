@@ -53,6 +53,8 @@ pub struct Settings {
     pub string_stiffness: Option<[f32; 6]>,
     /// Which Claude model the tone assistant uses.
     pub assistant_model: ModelChoice,
+    /// Whether to ask GitHub for new versions at startup.
+    pub check_updates: bool,
 }
 
 /// A, the key most guitar players reach for first.
@@ -100,6 +102,7 @@ impl Default for Settings {
             fret_intervals: false,
             string_stiffness: None,
             assistant_model: ModelChoice::default(),
+            check_updates: true,
         }
     }
 }
