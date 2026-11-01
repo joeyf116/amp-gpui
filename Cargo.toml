@@ -1,0 +1,39 @@
+﻿[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[workspace.dependencies]
+amp-dsp = { path = "crates/amp-dsp" }
+amp-engine = { path = "crates/amp-engine" }
+amp-preset = { path = "crates/amp-preset" }
+
+cpal = "0.18.2"
+directories = "6.0.0"
+fft-convolver = "0.4.0"
+gpui-kit = "=0.8.0"
+hound = "3.5.1"
+nam-rs = "0.4.0"
+rtrb = "0.4.1"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+sha2 = "0.10"
+thiserror = "2"
+
+# Neural inference is unusably slow unoptimized, so keep the audio path fast
+# in dev builds. Anything that can underrun gets opt-level 3.
+[profile.dev.package.amp-dsp]
+opt-level = 3
+
+[profile.dev.package.nam-rs]
+opt-level = 3
+
+[profile.dev.package.fft-convolver]
+opt-level = 3
+
+[profile.release]
+lto = "thin"

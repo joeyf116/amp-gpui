@@ -1,0 +1,9 @@
+/target/
+.env
+.env.*
+!.env.example
+
+# Captures and impulse responses often carry their own licenses, so they stay
+# out of the repo. Tests build their own models in code.
+*.nam
+*.wav

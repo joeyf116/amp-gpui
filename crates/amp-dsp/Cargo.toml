@@ -1,0 +1,13 @@
+﻿[package]
+name = "amp-dsp"
+description = "Real-time signal chain: gate, drive, NAM amp, IR cab, delay"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+fft-convolver.workspace = true
+hound.workspace = true
+nam-rs.workspace = true
+serde.workspace = true
+thiserror.workspace = true
