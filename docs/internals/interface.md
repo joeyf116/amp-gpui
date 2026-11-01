@@ -113,21 +113,50 @@ accounts for, and repeats. Each partial's removal is capped by its neighbours, s
 partial two notes share isn't all taken by the first. `chord_name` matches the result
 against chord shapes, and a chord has to hold for two looks before it shows.
 
-`song.rs` holds a loaded song. `read_song` in `crates/amp-engine/src/song_file.rs`
-decodes the file to mono at the engine rate with Symphonia, and `transcribe` in
-`crates/amp-dsp/src/melody.rs` finds the melody on a background thread. It works at
-12 kHz with a 10 ms hop. Each frame's spectral peaks vote for the pitches they could be
-harmonics of, a Viterbi pass follows the strongest smooth path with a silent state for
-gaps, and the path becomes notes after taking out the recording's own tuning. It's a
-reimplementation of the salience and tracking idea, with no model or extra data.
-`finger_line` then chooses frets by dynamic programming over the whole line, since unlike
-live notes it can see what's coming.
+`song.rs` holds a loaded song, `song_view.rs` draws it, and `song_export.rs` writes tab and
+MIDI. `read_song` in `crates/amp-engine/src/song_file.rs` decodes the file to mono at the
+engine rate with Symphonia. `read_song_map` in `crates/amp-dsp/src/song_map.rs` then reads
+it on a background thread, with no trained model or extra data:
 
-Playback is `SongPlayer` in `crates/amp-dsp/src/song.rs`, mixed in after the Output level
-like the metronome. The track is an `Arc<[f32]>`: the UI keeps a clone to reload a
-restarted engine, and a replaced track goes back through a retired queue so the audio
-thread never frees it. The audio thread publishes its sample position in `Meters`, and
-the tab and neck draw from that, so they follow what's actually playing.
+- **Melody** (`melody.rs`) runs at 12 kHz with a 10 ms hop. Each frame's spectral peaks vote
+  for the pitches they could be harmonics of, a Viterbi pass follows the strongest smooth
+  path with a silent state for gaps, and the path becomes notes after taking out the
+  recording's own tuning.
+- **Beats** follow Ellis's method: autocorrelate spectral flux for the tempo, then use
+  dynamic programming to find the beats that land on onsets and keep to it.
+- **Chords** are chroma averaged between beats, with the bass weighted up, matched against
+  major and minor shapes, with a Viterbi pass so they don't flicker.
+- **Key** is the summed chroma against the Krumhansl-Kessler profiles.
+
+The reading goes in the data folder's `songs` directory under a fingerprint of the sound,
+along with the player's fixes, so a renamed file finds it. `READING_VERSION` invalidates old
+readings when the analysis changes.
+
+`finger_line` chooses frets by dynamic programming over the whole line. Its states are a
+hand position plus a place on the neck, so a run settles into a position rather than
+creeping along, and a moved note pins its string and re-solves the line around it.
+
+Playback lives in `crates/amp-engine/src/song.rs`. Signalsmith Stretch is too heavy to risk
+on the audio thread beside the guitar, so `SongFeed` runs it on a worker that queues
+finished samples. Each sample carries where in the song it came from and which plan it
+belongs to, so position stays exact at any speed or around a loop, and a change takes
+effect at once: the audio thread fades down and drops whatever the older plan queued.
+`SongPlayer` only pops samples, after the Output level like the metronome. It publishes
+the position in `Meters`, and a replaced outlet goes back through a retired queue so the
+audio thread never frees it. At full speed in the original key with no loop, the worker
+skips the stretcher, as it colors the sound a little. The UI's `SongPlan` is sent whole, and
+a restarted engine gets a fresh feed from the current position.
+
+The wrapper needs a C++ compiler and libclang to build, like the ASIO driver.
+
+To measure the tracker on a real recording with a hand-checked pitch track, run:
+
+```bash
+cargo run --release -p amp-engine --example melody_score -- song.mp3 labels.csv
+```
+
+Run it before and after a change to the tracker. Modeled mixes in `crates/amp-dsp/tests`
+flatter it, and a method like this does much worse on real songs than on them.
 
 A pitch can't say where it was fretted, so `place_note` scores each place by hand
 distance and by stiffness. Stiffness is the inharmonicity B in

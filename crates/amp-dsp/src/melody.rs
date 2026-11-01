@@ -12,7 +12,7 @@ use crate::listen::fft;
 use std::f32::consts::PI;
 
 /// The rate the analysis runs at. Melody harmonics above 6 kHz add nothing.
-const ANALYSIS_RATE: u32 = 12_000;
+pub(crate) const ANALYSIS_RATE: u32 = 12_000;
 const WINDOW: usize = 1_024;
 const FFT_SIZE: usize = 4_096;
 /// One frame of analysis every 10 ms.
@@ -73,7 +73,7 @@ pub struct MelodyNote {
 
 /// Steps `samples` down to the analysis rate. A windowed sinc takes out what
 /// wouldn't fit, then a straight interpolation picks the new samples.
-fn resample(samples: &[f32], rate: u32) -> Vec<f32> {
+pub(crate) fn resample(samples: &[f32], rate: u32) -> Vec<f32> {
     if rate == ANALYSIS_RATE {
         return samples.to_vec();
     }
@@ -355,10 +355,14 @@ fn segment(pitches: &[Option<f32>], levels: &[f32], tune: f32) -> Vec<MelodyNote
 }
 
 /// Finds the melody in mono `samples`. `progress` hears a share from 0 to 1.
-pub fn transcribe(samples: &[f32], rate: u32, mut progress: impl FnMut(f32)) -> Vec<MelodyNote> {
-    let audio = resample(samples, rate);
+pub fn transcribe(samples: &[f32], rate: u32, progress: impl FnMut(f32)) -> Vec<MelodyNote> {
+    melody_notes(&resample(samples, rate), progress).0
+}
+
+/// Finds the melody in `audio` at the analysis rate, and the recording's tuning.
+pub(crate) fn melody_notes(audio: &[f32], mut progress: impl FnMut(f32)) -> (Vec<MelodyNote>, f32) {
     if audio.len() < WINDOW {
-        return Vec::new();
+        return (Vec::new(), 0.0);
     }
     let frames = (audio.len() - WINDOW) / HOP + 1;
     let mut salience = vec![0.0; frames * PITCHES];
@@ -378,7 +382,7 @@ pub fn transcribe(samples: &[f32], rate: u32, mut progress: impl FnMut(f32)) -> 
     tops.sort_by(f32::total_cmp);
     let strong = tops[((frames - 1) as f32 * STRONG_SHARE) as usize];
     if strong <= 0.0 {
-        return Vec::new();
+        return (Vec::new(), 0.0);
     }
     let path = follow(&salience, strong);
     progress(0.97);
@@ -396,14 +400,15 @@ pub fn transcribe(samples: &[f32], rate: u32, mut progress: impl FnMut(f32)) -> 
     progress(1.0);
     // Analysis frames are stamped at their start; a note sounds at their middle.
     let center = WINDOW as f32 / 2.0 / ANALYSIS_RATE as f32;
-    notes
+    let notes = notes
         .into_iter()
         .map(|note| MelodyNote {
             start: note.start + center,
             end: note.end + center,
             ..note
         })
-        .collect()
+        .collect();
+    (notes, tune)
 }
 
 #[cfg(test)]

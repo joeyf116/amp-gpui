@@ -2,7 +2,7 @@
 //! sums of decaying harmonics, not recordings, so they check the method rather
 //! than promise a score on a real song.
 
-use amp_dsp::{MelodyNote, midi_hertz, transcribe};
+use amp_dsp::{MelodyNote, midi_hertz, read_song_map, transcribe};
 use std::f32::consts::TAU;
 
 const RATE: u32 = 44_100;
@@ -71,8 +71,9 @@ const PHRASE: [(i32, f32); 16] = [
     (81, 2.0),
 ];
 const BEAT: f32 = 0.5;
-/// Roots of the backing, a bar each.
+/// Roots of the backing and the size of each third, a bar each: Am, F, C, G.
 const CHANGES: [i32; 4] = [45, 41, 48, 43];
+const THIRDS: [i32; 4] = [3, 4, 4, 4];
 
 fn melody(transpose: i32) -> Vec<MelodyNote> {
     let mut at = 0.25;
@@ -100,7 +101,7 @@ fn render(notes: &[MelodyNote], band: bool, sharp: f32) -> Vec<f32> {
         let mut at = 0.0;
         while at < total {
             let root = CHANGES[bar % CHANGES.len()];
-            let third = if bar % 2 == 0 { 3 } else { 4 };
+            let third = THIRDS[bar % THIRDS.len()];
             for step in 0..4 {
                 let beat = at + step as f32 * BEAT;
                 pluck(&mut buffer, beat, BEAT, root - 12, 0.3, 4);
@@ -193,6 +194,42 @@ fn a_recording_a_little_sharp_lands_on_the_right_notes() {
         })
         .collect();
     assert!(score(&at_tempo, &render(&truth, false, 0.4)) > 0.9);
+}
+
+#[test]
+fn the_beats_of_a_band_fall_on_its_pulse() {
+    let map = read_song_map(&render(&melody(0), true, 0.0), RATE, |_| {});
+    let gaps: Vec<f32> = map.beats.windows(2).map(|pair| pair[1] - pair[0]).collect();
+    eprintln!("{} beats, gaps {gaps:?}", map.beats.len());
+    let right = gaps
+        .iter()
+        .filter(|gap| (**gap - BEAT).abs() < 0.03)
+        .count();
+    assert!(right * 10 >= gaps.len() * 8, "{gaps:?}");
+    let on_pulse = map.beats.iter().filter(|beat| {
+        let off = (*beat / BEAT).fract();
+        off.min(1.0 - off) * BEAT < 0.06
+    });
+    assert!(
+        on_pulse.count() * 10 >= map.beats.len() * 8,
+        "{:?}",
+        map.beats
+    );
+}
+
+#[test]
+fn the_chords_of_a_band_follow_its_changes() {
+    let map = read_song_map(&render(&melody(0), true, 0.0), RATE, |_| {});
+    eprintln!("{:?} key {:?}", map.chords, map.key);
+    let expected = ["Am", "F", "C", "G"];
+    let times: Vec<f32> = (0..15).map(|beat| (beat as f32 + 0.5) * BEAT).collect();
+    let right = times.iter().filter(|time| {
+        let bar = (**time / (4.0 * BEAT)) as usize;
+        map.chords.iter().any(|chord| {
+            (chord.start..chord.end).contains(*time) && chord.name == expected[bar % 4]
+        })
+    });
+    assert!(right.count() >= 10, "{:?}", map.chords);
 }
 
 /// Prints how long a four minute song takes. Run with `--ignored --nocapture`.

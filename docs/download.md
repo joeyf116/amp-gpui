@@ -21,7 +21,9 @@ tones.
 ## Windows security warning
 
 The installer isn't code signed yet, so Windows SmartScreen may stop it with
-"Windows protected your PC". Choose **More info**, then **Run anyway**.
+"Windows protected your PC" and "Unknown publisher". Choose **More info**, then
+**Run anyway**. You only need to do this for the first install, since the app
+updates itself from then on.
 
 Each release also has an `amp-gpui-setup.exe.sha256` file. To check your
 download against it, run this from the folder you saved it in, then compare the

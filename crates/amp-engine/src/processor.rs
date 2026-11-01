@@ -1,5 +1,6 @@
 use crate::pump::ENGINE_RATE;
-use amp_dsp::{Chain, Click, Metronome, SongPlayer};
+use crate::song::{SongOutlet, SongPlayer};
+use amp_dsp::{Chain, Click, Metronome};
 use rtrb::{Consumer, Producer, RingBuffer};
 use std::{
     sync::{
@@ -43,10 +44,8 @@ pub enum Command {
     /// Starts, stops, or changes the metronome.
     SetClick(Click),
     /// Loads a song to play along with, from its start.
-    LoadSong(Arc<[f32]>),
+    LoadSong(SongOutlet),
     SetSongPlaying(bool),
-    /// Moves the song, in samples from its start.
-    SeekSong(usize),
     /// The song's level, as a linear gain.
     SetSongLevel(f32),
 }
@@ -63,6 +62,7 @@ pub struct Meters {
     tuner_on: AtomicBool,
     beat: AtomicU32,
     song_position: AtomicUsize,
+    song_ended: AtomicBool,
 }
 
 /// Where the delay between string and speaker goes. Only what the drivers
@@ -94,6 +94,11 @@ impl Meters {
     /// How far the song has played, in samples from its start.
     pub fn song_position(&self) -> usize {
         self.song_position.load(Ordering::Relaxed)
+    }
+
+    /// Whether the song has played through to its end.
+    pub fn song_ended(&self) -> bool {
+        self.song_ended.load(Ordering::Relaxed)
     }
 
     pub fn latency(&self) -> Latency {
@@ -149,7 +154,7 @@ impl Meters {
 pub struct Controller {
     commands: Producer<Command>,
     retired: Consumer<Box<Chain>>,
-    retired_songs: Consumer<Arc<[f32]>>,
+    retired_songs: Consumer<SongOutlet>,
     tuner: Consumer<f32>,
     pub meters: Arc<Meters>,
 }
@@ -186,9 +191,9 @@ pub struct Processor {
     /// A chain waiting for room in `retired`. Dropping it here would free
     /// memory on the audio thread, so it waits until the queue has space.
     pending_retire: Option<Box<Chain>>,
-    retired_songs: Producer<Arc<[f32]>>,
+    retired_songs: Producer<SongOutlet>,
     /// A song waiting for room, for the same reason as `pending_retire`.
-    pending_song: Option<Arc<[f32]>>,
+    pending_song: Option<SongOutlet>,
     fade: Option<Fade>,
     fade_scratch: Vec<f32>,
     tuner: Producer<f32>,
@@ -302,6 +307,9 @@ impl Processor {
         self.meters
             .song_position
             .store(self.song.position(), Ordering::Relaxed);
+        self.meters
+            .song_ended
+            .store(self.song.ended(), Ordering::Relaxed);
         for sample in buffer.iter_mut() {
             *sample = limit(*sample);
         }
@@ -336,7 +344,6 @@ impl Processor {
                     }
                 }
                 Command::SetSongPlaying(playing) => self.song.set_playing(playing),
-                Command::SeekSong(position) => self.song.seek(position),
                 Command::SetSongLevel(level) => self.song.set_level(level),
                 Command::SetChain(chain) => {
                     let old = std::mem::replace(&mut self.chain, chain);
@@ -376,7 +383,7 @@ impl Processor {
         }
     }
 
-    fn retire_song(&mut self, song: Arc<[f32]>) {
+    fn retire_song(&mut self, song: SongOutlet) {
         if let Err(rtrb::PushError::Full(song)) = self.retired_songs.push(song) {
             self.pending_song = Some(song);
         }
@@ -525,35 +532,35 @@ mod tests {
     #[test]
     fn a_song_plays_over_a_silenced_rig_and_reports_where_it_is() {
         let (mut processor, mut controller) = processor(scale_chain(1.0));
-        let song: Arc<[f32]> = vec![0.5; 48_000].into();
+        let (mut samples, outlet) = crate::song::test_outlet();
+        for frame in 0..4_096 {
+            samples.push((0.5, frame, 0)).unwrap();
+        }
         for command in [
             Command::SetOutputGain(0.0),
-            Command::LoadSong(song),
+            Command::LoadSong(outlet),
             Command::SetSongLevel(1.0),
             Command::SetSongPlaying(true),
         ] {
             assert!(controller.send(command).is_ok());
         }
-        let mut buffer = [0.0; 4_096];
+        let mut buffer = [0.0; 4_000];
         processor.process(&mut buffer);
-        assert!(buffer[4_095] > 0.4);
-        assert_eq!(controller.meters.song_position(), 4_096);
+        assert!(buffer[3_999] > 0.4);
+        assert_eq!(controller.meters.song_position(), 3_999);
     }
 
     #[test]
     fn an_old_song_goes_back_to_the_ui_thread() {
         let (mut processor, mut controller) = processor(scale_chain(1.0));
-        let first: Arc<[f32]> = vec![0.0; 16].into();
-        assert!(controller.send(Command::LoadSong(first.clone())).is_ok());
-        assert!(
-            controller
-                .send(Command::LoadSong(vec![0.0; 8].into()))
-                .is_ok()
-        );
+        let (first, outlet) = crate::song::test_outlet();
+        assert!(controller.send(Command::LoadSong(outlet)).is_ok());
+        let (_second, outlet) = crate::song::test_outlet();
+        assert!(controller.send(Command::LoadSong(outlet)).is_ok());
         processor.process(&mut [0.0]);
-        assert_eq!(Arc::strong_count(&first), 2);
+        assert!(!first.is_abandoned());
         controller.drop_retired();
-        assert_eq!(Arc::strong_count(&first), 1);
+        assert!(first.is_abandoned());
     }
 
     #[test]
