@@ -8,11 +8,12 @@ reach your speakers. Turn it off on the interface or in its mixer app.
 ## I don't hear anything
 
 1. Check that **Start monitoring** has turned into **Stop monitoring**.
-2. Play and watch the **In** meter. If it doesn't move, check **Channel**, the
+2. Play and watch the **Input** meter. If it doesn't move, check **Channel**, the
    interface's input gain, and the guitar's volume knob.
-3. If **In** moves but **Out** doesn't, check that a gate isn't closed with its
+3. If **Input** moves but **Output** doesn't, check that a gate isn't closed with its
    threshold set too high, and that the **Output** knob isn't turned down.
-4. If **Out** moves but the speakers are silent, check **Speakers out**, or the
+4. If the **Output** meter moves but the speakers are silent, check **Speakers
+   out** in **Audio setup**, or the
    interface's output and headphone levels.
 
 On **Low latency**, other apps go silent on those devices. That's expected, and
@@ -21,7 +22,7 @@ it stops when you stop monitoring.
 ## Other apps went silent
 
 **Low latency** takes the devices over. Stop monitoring to get them back, or press
-the button to switch to **Shared audio**.
+the button in **Audio setup** to switch to **Shared audio**.
 
 ## It says "Using a slower route"
 

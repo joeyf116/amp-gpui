@@ -11,7 +11,7 @@ want them.
 After that:
 
 - [Load and save tones](tones.md)
-- [Build a board](board.md) from pedals, amps, and cabinets
+- [Build a rig](board.md) from pedals, amps, and cabinets
 - [Share tones](sharing.md) with other people
 - [Practice and tune](practice.md)
 - [Keyboard and mouse](controls.md) controls

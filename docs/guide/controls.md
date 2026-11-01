@@ -11,16 +11,16 @@ pedal.
 | Fine adjustment | Hold ++shift++ while dragging or scrolling |
 | Reset to default | Double-click it |
 
-## Board
+## Chain
 
 | Action | How |
 | --- | --- |
 | Select a unit | ++left++ and ++right++, or click it |
-| Open its settings | Double-click it, or press ++enter++ |
-| Close its settings | ++esc++ |
+| Put the first unit on the stage | ++enter++ |
+| Clear the stage, or close an open panel | ++esc++ |
 | Bypass it | Press its footswitch, or press ++b++ |
 | Move it | Drag it, or press ++alt+left++ and ++alt+right++ |
-| Remove it | ++delete++, or drag it back to the rack |
+| Remove it | ++delete++, or drag it to the open gear drawer |
 | Undo | ++ctrl+z++ |
 | Redo | ++ctrl+y++ or ++ctrl+shift+z++ |
 
@@ -34,3 +34,5 @@ a knob counts as one edit.
 | Previous or next tone | ++page-up++ and ++page-down++ |
 | Start or stop monitoring | ++m++ |
 | Tuner | ++t++ |
+| Tone Explorer | ++ctrl+o++ |
+| Gear drawer | ++g++ |

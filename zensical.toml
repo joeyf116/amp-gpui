@@ -15,7 +15,7 @@ nav = [
     { "Connect your interface" = "guide/setup.md" },
     { "Monitoring and latency" = "guide/monitoring.md" },
     { "Load and save tones" = "guide/tones.md" },
-    { "Build a board" = "guide/board.md" },
+    { "Build a rig" = "guide/board.md" },
     { "Share tones" = "guide/sharing.md" },
     { "Practice and tune" = "guide/practice.md" },
     { "Keyboard and mouse" = "guide/controls.md" },
@@ -28,12 +28,15 @@ nav = [
     { "Signal chain" = "internals/chain.md" },
     { "Block reference" = "internals/blocks.md" },
     { "Presets and the library" = "internals/presets.md" },
+    { "Interface and art" = "internals/interface.md" },
     { "Work on the code" = "internals/contributing.md" },
   ] },
 ]
 
 [project.theme]
 language = "en"
+logo = "assets/logo.svg"
+favicon = "assets/logo.svg"
 features = [
   "content.action.edit",
   "content.code.copy",
@@ -48,9 +51,6 @@ features = [
   "navigation.tracking",
   "search.highlight",
 ]
-
-[project.theme.icon]
-logo = "lucide/audio-waveform"
 
 # Dark comes first because the app itself is dark.
 [[project.theme.palette]]

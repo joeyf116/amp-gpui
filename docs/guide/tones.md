@@ -1,12 +1,27 @@
 # Load and save tones
 
-A tone is a saved board: every unit on it, in order, with its settings. The
-**Tones** list is on the left side of the window.
+A tone is a saved rig: every unit in the chain, in order, with its settings. The
+tone name in the header shows what's loaded, and an asterisk means it has unsaved
+edits.
 
 ## Load a tone
 
-Click a tone in the list, or press ++page-up++ and ++page-down++ to step through
-them. Tones load in the background and crossfade in, so you can switch while
+Press the arrows beside the name, or ++page-up++ and ++page-down++, to step through
+your tones.
+
+For everything else, click the name or press ++ctrl+o++ to open the **Tone
+Explorer**.
+
+![The Tone Explorer](../assets/screens/tone-explorer.webp)
+
+- **Shelves:** the left side sorts tones into **All tones**, **Favorites**,
+  **Recent**, **Factory**, **My tones**, and one shelf per tag.
+- **Search:** type in the top box. It matches names, tags, and notes.
+- **Favorites:** press the star on a tone, or the star in the header.
+- **Compare:** click a tone to load it while the Explorer stays open, so you can
+  try several as you play. Double-click one, or press ++esc++, to close.
+
+ Tones load in the background and crossfade in, so you can switch while
 you're playing. Delay and reverb tails from the old tone stop as it fades out.
 
 If a tone can't load, for example because a file it needs is missing, the current
@@ -43,12 +58,12 @@ they need no captures or impulse responses.
 
 ## Save a tone
 
-1. Type a name in the box above the tone list.
-2. Press the button under it, which reads **Save tone**, or **Save changes** when
-   the board has edits.
+**Save** in the header writes your edits to the tone that's loaded.
 
-Saving under the name of an existing tone replaces it. Saving under a new name
-makes a copy, which is the way to rename a tone or start a variation.
+To save a copy, open the Tone Explorer, type a new name in the box at the bottom,
+and press **Save under this name**. Saving under the name of an existing tone
+replaces it. That's also the way
+to rename a tone or start a variation.
 
 A name needs at least one letter or number. Two names that differ only in
 punctuation or case, like `Lead #2` and `lead 2`, share one file, so the second
@@ -57,4 +72,5 @@ save replaces the first.
 ## Delete a tone
 
 There's no delete button yet. Delete the tone's `.json` file from the library's
-`presets` folder, then restart the app. Factory tones you delete stay deleted.
+`presets` folder, then restart the app. **Library folder** in the Tone Explorer
+chooses where that folder is. Factory tones you delete stay deleted.

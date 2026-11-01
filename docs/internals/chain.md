@@ -82,9 +82,9 @@ The pieces of this sequence each exist for a reason:
 When loading a tone, the chain is built first, and the tone is adopted only if
 every file loads. A bad file leaves the current tone playing.
 
-## The board and the chain
+## The chain strip and the chain
 
-The UI's board is a view of the `Preset`, and a slot on the board is the same index
+The UI's chain strip is a view of the `Preset`, and a slot on the strip is the same index
 as a slot in the chain. That's what lets a `SetParam` command address a knob by
 slot and parameter number.
 

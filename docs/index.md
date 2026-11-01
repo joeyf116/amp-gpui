@@ -13,6 +13,8 @@ Amps can be [Neural Amp Modeler](https://www.neuralampmodeler.com/) captures
 Cabinets are impulse responses (`.wav` files) or the built-in cabinet voice.
 Tones live in a plain folder that you own and can share however you like.
 
+![Amp GPUI with a tube head on the stage](assets/screens/rig.webp)
+
 <div class="grid cards" markdown>
 
 -   **[User guide](guide/index.md)**
@@ -30,8 +32,10 @@ Tones live in a plain folder that you own and can share however you like.
 
 - **Live monitoring first.** Through ASIO, a Behringer FLOW 8 reports about
   8 ms from input to output. See [Monitoring and latency](guide/monitoring.md).
-- **A drag-and-drop pedalboard.** Put gear in any order, with undo and redo,
-  and hear each edit without a click.
+- **A rig you can see.** Realistic gear art in a chain strip, with the selected
+  unit up close on a stage. Put gear in any order, with undo and redo, and hear
+  each edit without a click.
+- **A Tone Explorer** with search, tags, favorites, and recent tones.
 - **14 factory tones** from clean to fuzz, made only from built-in blocks, so
   they play on a fresh install.
 - **Your own tone library.** It's a folder of JSON and files named by content

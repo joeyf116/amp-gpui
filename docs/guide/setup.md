@@ -16,7 +16,10 @@
 
 ## Choose your devices
 
-The bar along the top of the window holds the audio settings.
+Press **Audio setup** at the bottom left of the window. Your choices are saved,
+so you only need this panel once.
+
+![The Audio setup panel](../assets/screens/audio-setup.webp)
 
 === "With an ASIO driver"
 
@@ -44,12 +47,12 @@ The bar along the top of the window holds the audio settings.
 
 ## Play
 
-Press **Start monitoring**, or press ++m++. The app opens on a tone called Moss
+Press **Start monitoring** at the top right, or press ++m++. The app opens on a tone called Moss
 Clean, so you should hear a warm clean sound.
 
-Check the **In** and **Out** meters at the top right while you play:
+Check the **Input** and **Output** meters at the top right while you play:
 
-- If **In** barely moves, you probably picked the wrong channel, or the
+- If the **Input** meter barely moves, you probably picked the wrong channel, or the
   interface gain is too low.
 - If a meter turns red, the level is close to full scale. Turn down the **Input**
   or **Output** knob beside the meters.

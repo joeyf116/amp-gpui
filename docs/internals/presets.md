@@ -10,7 +10,7 @@ library/
 ├── assets/           Captures and IRs, named by hash
 │   └── <sha256>.nam
 ├── practice/         One JSON file per tab sheet
-├── captures.json     The rack's catalog
+├── captures.json     The gear drawer's catalog
 └── factory.json      Which factory tones this library has been given
 ```
 
@@ -89,8 +89,8 @@ Importing runs in two passes:
 A pack with a swapped file therefore leaves the library untouched.
 
 `captures.json` isn't part of a pack. It's a cache of details from each `.nam` file,
-kept so the rack doesn't have to parse megabytes of weights to show a list. Tones
-from a pack play without it, but their captures don't appear in the rack.
+kept so the gear drawer doesn't have to parse megabytes of weights to show a list. Tones
+from a pack play without it, but their captures don't appear in the drawer.
 
 ## Factory tones
 

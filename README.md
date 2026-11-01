@@ -1,5 +1,7 @@
 # Amp GPUI
 
+![Amp GPUI](docs/assets/screens/rig.webp)
+
 A desktop guitar amp and effects rig written in Rust. Plug a guitar into an
 audio interface, load an amp tone, and play through your speakers, with no
 pedal or modeler box in between.
@@ -21,8 +23,8 @@ cargo run -p amp-app
 On Windows, build from PowerShell. Git Bash puts its own `link.exe` ahead of
 the MSVC one.
 
-Then pick your interface under **Guitar in**, your speakers under **Speakers
-out**, load a `.nam` capture, and press **Start monitoring**. Turn off your
+Then open **Audio setup** at the bottom left, pick your interface under **Guitar
+in** and your speakers under **Speakers out**, and press **Start monitoring**. Turn off your
 interface's own direct monitoring so you only hear the processed signal.
 
 To check a device pair without making a sound:
@@ -80,15 +82,17 @@ Sheets are JSON files in the library's `practice` folder.
 | Turn a knob | Drag up or down, or scroll |
 | Fine adjustment | Hold Shift while dragging or scrolling |
 | Reset a knob | Double-click it |
-| Open a unit's settings | Double-click it, or select it and press Enter |
+| Put a unit on the stage | Click it |
 | Bypass a pedal | Press its footswitch, or select it and press B |
 | Select a unit | Left and Right |
 | Move a unit | Alt+Left and Alt+Right |
-| Remove a unit | Delete, or drag it back to the rack |
+| Remove a unit | Delete, or drag it to the gear drawer |
 | Undo and redo | Ctrl+Z, and Ctrl+Y or Ctrl+Shift+Z |
 | Previous or next tone | Page Up and Page Down |
 | Start or stop monitoring | M |
 | Tuner | T |
+| Tone Explorer | Ctrl+O |
+| Gear drawer | G |
 
 ## Status
 

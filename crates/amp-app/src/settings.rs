@@ -24,6 +24,12 @@ pub struct Settings {
     /// Set to run through this interface's ASIO driver.
     #[serde(default)]
     pub asio_driver: Option<String>,
+    /// Tones marked with a star, by name.
+    #[serde(default)]
+    pub favorites: Vec<String>,
+    /// Tones loaded lately, by name, newest first.
+    #[serde(default)]
+    pub recent: Vec<String>,
 }
 
 /// `AMP_GPUI_DATA` points the app at another folder, which keeps test runs away

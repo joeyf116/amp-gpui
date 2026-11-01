@@ -1,6 +1,9 @@
-use crate::style::{moss, moss_glow};
+use crate::{
+    art,
+    style::{moss, moss_glow},
+};
 use amp_dsp::ParamSpec;
-use gpui_kit::{component::ActiveTheme, *};
+use gpui_kit::{component::ActiveTheme, prelude::FluentBuilder, *};
 use std::{f32::consts::PI, rc::Rc};
 
 const SWEEP: f32 = 1.5 * PI;
@@ -13,7 +16,23 @@ const FINE: f32 = 0.2;
 /// How far one notch of a scroll wheel turns the knob.
 const WHEEL_STEP: f32 = 0.02;
 
+/// How much of a faceplate knob's box the knob itself fills, leaving a printed
+/// scale around it.
+const CAP_SHARE: f32 = 0.84;
+const SCALE_TICKS: usize = 11;
+
 type OnChange = Rc<dyn Fn(&f32, &mut Window, &mut App)>;
+
+/// What a knob is drawn as.
+#[derive(Clone, Copy, PartialEq)]
+pub enum KnobLook {
+    /// A flat ring, for the window's own level controls.
+    Ring,
+    /// A fluted amp knob with a spun metal cap.
+    Amp,
+    /// A small knurled pedal knob.
+    Pedal,
+}
 
 #[derive(Clone, Copy)]
 struct Drag {
@@ -29,6 +48,8 @@ pub struct Knob {
     spec: ParamSpec,
     value: f32,
     size: Pixels,
+    look: KnobLook,
+    ink: Option<Hsla>,
     on_change: OnChange,
 }
 
@@ -45,8 +66,17 @@ impl Knob {
             spec,
             value,
             size,
+            look: KnobLook::Ring,
+            ink: None,
             on_change: Rc::new(on_change),
         }
+    }
+
+    /// Sets it into a faceplate, with its text in that plate's print color.
+    pub fn on_faceplate(mut self, look: KnobLook, ink: Hsla) -> Self {
+        self.look = look;
+        self.ink = Some(ink);
+        self
     }
 }
 
@@ -89,6 +119,8 @@ impl RenderOnce for Knob {
             spec,
             value,
             size,
+            look,
+            ink,
             on_change,
         } = self;
         let drag = window.use_keyed_state(id.clone(), cx, |_, _| None::<Drag>);
@@ -97,7 +129,8 @@ impl RenderOnce for Knob {
         let track = cx.theme().muted;
         let body = cx.theme().background;
         let rim = cx.theme().border;
-        let label_color = cx.theme().muted_foreground;
+        let label_color = ink.unwrap_or(cx.theme().muted_foreground);
+        let value_color = ink.map_or(cx.theme().foreground, |ink| ink.opacity(0.78));
         let ink = cx.theme().foreground;
 
         let press_state = drag.clone();
@@ -110,34 +143,60 @@ impl RenderOnce for Knob {
             |_, _, _| {},
             move |bounds, _, window, _| {
                 let center = bounds.center();
-                let outer = bounds.size.width / 2.0 - px(3.0);
-                let end = START_ANGLE + SWEEP;
                 let needle = START_ANGLE + SWEEP * amount;
-                if let Some(path) = arc(center, outer, START_ANGLE, end, px(4.0)) {
-                    window.paint_path(path, track);
-                }
-                if amount > 0.0
-                    && let Some(path) = arc(center, outer, START_ANGLE, needle, px(4.0))
-                {
-                    window.paint_path(path, moss());
-                }
-                if amount > 0.0
-                    && let Some(path) = arc(center, outer, START_ANGLE, needle, px(8.0))
-                {
-                    window.paint_path(path, moss_glow(0.14));
-                }
-                let inner = outer - px(8.0);
-                if let Some(path) = disc(center, inner) {
-                    window.paint_path(path, rim);
-                }
-                if let Some(path) = disc(center, inner - px(1.5)) {
-                    window.paint_path(path, body);
-                }
-                let mut pointer = PathBuilder::stroke(px(3.0));
-                pointer.move_to(point_at(center, inner * 0.35, needle));
-                pointer.line_to(point_at(center, inner * 0.88, needle));
-                if let Ok(path) = pointer.build() {
-                    window.paint_path(path, ink);
+                if look == KnobLook::Ring {
+                    let outer = bounds.size.width / 2.0 - px(3.0);
+                    let end = START_ANGLE + SWEEP;
+                    if let Some(path) = arc(center, outer, START_ANGLE, end, px(4.0)) {
+                        window.paint_path(path, track);
+                    }
+                    if amount > 0.0
+                        && let Some(path) = arc(center, outer, START_ANGLE, needle, px(4.0))
+                    {
+                        window.paint_path(path, moss());
+                    }
+                    if amount > 0.0
+                        && let Some(path) = arc(center, outer, START_ANGLE, needle, px(8.0))
+                    {
+                        window.paint_path(path, moss_glow(0.14));
+                    }
+                    let inner = outer - px(8.0);
+                    if let Some(path) = disc(center, inner) {
+                        window.paint_path(path, rim);
+                    }
+                    if let Some(path) = disc(center, inner - px(1.5)) {
+                        window.paint_path(path, body);
+                    }
+                    let mut pointer = PathBuilder::stroke(px(3.0));
+                    pointer.move_to(point_at(center, inner * 0.35, needle));
+                    pointer.line_to(point_at(center, inner * 0.88, needle));
+                    if let Ok(path) = pointer.build() {
+                        window.paint_path(path, ink);
+                    }
+                } else {
+                    // The knob below is a fixed picture, lit from one side, so
+                    // only the pointer and printed scale are painted.
+                    let reach = bounds.size.width / 2.0;
+                    let cap = reach * CAP_SHARE;
+                    for tick in 0..SCALE_TICKS {
+                        let angle = START_ANGLE + SWEEP * tick as f32 / (SCALE_TICKS - 1) as f32;
+                        let mut mark = PathBuilder::stroke(px(1.2));
+                        mark.move_to(point_at(center, reach * 0.9, angle));
+                        mark.line_to(point_at(center, reach, angle));
+                        if let Ok(path) = mark.build() {
+                            window.paint_path(path, label_color.opacity(0.55));
+                        }
+                    }
+                    let (from, width) = match look {
+                        KnobLook::Amp => (0.55, 2.4),
+                        _ => (0.3, 2.6),
+                    };
+                    let mut pointer = PathBuilder::stroke(px(width));
+                    pointer.move_to(point_at(center, cap * from, needle));
+                    pointer.line_to(point_at(center, cap * 0.92, needle));
+                    if let Ok(path) = pointer.build() {
+                        window.paint_path(path, hsla(0.12, 0.25, 0.92, 1.0));
+                    }
                 }
 
                 // Registered on the window so a drag keeps working once the
@@ -182,6 +241,7 @@ impl RenderOnce for Knob {
                 }
             },
         )
+        .absolute()
         .size_full();
 
         div()
@@ -194,6 +254,7 @@ impl RenderOnce for Knob {
             .child(
                 div()
                     .id(id)
+                    .relative()
                     .size(size)
                     .cursor_ns_resize()
                     .on_scroll_wheel(move |event, window, cx| {
@@ -216,8 +277,28 @@ impl RenderOnce for Knob {
                         });
                         window.refresh();
                     })
+                    .when(look != KnobLook::Ring, |knob| {
+                        let cap = size * CAP_SHARE;
+                        let inset = (size - cap) / 2.0;
+                        knob.child(
+                            img(if look == KnobLook::Amp {
+                                art::knob_amp()
+                            } else {
+                                art::knob_pedal()
+                            })
+                            .absolute()
+                            .left(inset)
+                            .top(inset)
+                            .size(cap),
+                        )
+                    })
                     .child(dial),
             )
-            .child(div().text_xs().child(format!("{:.1} {}", value, spec.unit)))
+            .child(
+                div()
+                    .text_xs()
+                    .text_color(value_color)
+                    .child(format!("{:.1} {}", value, spec.unit)),
+            )
     }
 }

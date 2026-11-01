@@ -22,8 +22,8 @@ Choose a route like this:
 - Need to hear a backing track from another app on the same device? Use **Shared
   audio**, or choose ASIO if your driver lets other apps play.
 
-The **Low latency** button sits next to **Start monitoring**. Press it to switch
-to **Shared audio** and back. It's hidden while an ASIO driver is selected.
+The **Low latency** button is in **Audio setup**, at the bottom left of the
+window. Press it to switch to **Shared audio** and back. It's hidden while an ASIO driver is selected.
 
 ## If a route is busy
 

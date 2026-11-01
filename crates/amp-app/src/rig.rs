@@ -1,12 +1,11 @@
+mod audio;
 mod board;
+mod explorer;
+mod header;
 mod practice;
 mod tuner;
 
-use crate::{
-    knob::Knob,
-    settings::Settings,
-    style::{fog, hairline, pane},
-};
+use crate::{knob::Knob, settings::Settings};
 use amp_dsp::{AmpInfo, BlockKind, ParamSpec, Pitch};
 use amp_engine::{
     Command, DeviceList, DeviceOption, ENGINE_RATE, Engine, EngineConfig, Latency, LatencyMode,
@@ -14,13 +13,14 @@ use amp_engine::{
 use amp_preset::{
     AssetKind, BlockPreset, CaptureEntry, Library, LibraryError, Preset, PresetEntry, build_chain,
 };
+use explorer::Explorer;
 use gpui_kit::{
     component::{
-        ActiveTheme, IndexPath, Sizable, StyledExt,
+        ActiveTheme, IndexPath, Sizable,
         button::{Button, ButtonVariants},
         h_flex,
-        input::{Input, InputState},
-        select::{Select, SelectEvent, SelectItem, SelectState},
+        input::InputState,
+        select::{SelectEvent, SelectItem, SelectState},
         v_flex,
     },
     prelude::FluentBuilder,
@@ -36,6 +36,8 @@ const HISTORY: usize = 64;
 /// Waits this long after a level knob stops before writing settings to disk.
 const SETTINGS_SAVE_DELAY: f32 = 1.0;
 const FIRST_TONE: &str = "Moss Clean";
+const HEADER_HEIGHT: f32 = 72.0;
+const FOOTER_HEIGHT: f32 = 36.0;
 const KNOB_INPUT: ParamSpec = ParamSpec {
     id: "input_level",
     name: "Input",
@@ -69,12 +71,17 @@ actions!(
         PreviousTone,
         NextTone,
         ToggleMonitoring,
-        ToggleTuner
+        ToggleTuner,
+        ToggleTones,
+        ToggleGear
     ]
 );
 
-/// Keys that act on the board. They only fire outside a text field, so typing
-/// a tone's name can't remove a pedal.
+/// Single letters that act on the rig. Text fields sit inside the rig, so these
+/// are switched off in them, or typing a tone's name would bypass a pedal.
+const LETTER_KEYS: [&str; 4] = ["b", "g", "m", "t"];
+
+/// Keys that act on the board.
 pub fn bind_keys(cx: &mut App) {
     let rig = Some("Rig");
     cx.bind_keys([
@@ -93,7 +100,14 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("pagedown", NextTone, rig),
         KeyBinding::new("m", ToggleMonitoring, rig),
         KeyBinding::new("t", ToggleTuner, rig),
+        KeyBinding::new("ctrl-o", ToggleTones, rig),
+        KeyBinding::new("g", ToggleGear, rig),
     ]);
+    cx.bind_keys(
+        LETTER_KEYS
+            .iter()
+            .map(|key| KeyBinding::new(key, NoAction, Some("Input"))),
+    );
 }
 
 fn db_to_gain(db: f32) -> f32 {
@@ -108,6 +122,14 @@ const AMP_QUALITY: usize = 2;
 enum View {
     Board,
     Practice,
+}
+
+/// A panel open over the main view.
+#[derive(Clone, Copy, PartialEq)]
+enum Overlay {
+    None,
+    Tones,
+    Audio,
 }
 
 #[derive(Clone)]
@@ -187,9 +209,11 @@ pub struct Rig {
     pitch: Option<Pitch>,
     view: View,
     practice: Practice,
+    overlay: Overlay,
+    explorer: Explorer,
+    gear_open: bool,
 
     selected: Option<usize>,
-    settings_open: bool,
     hover_gap: Option<usize>,
     smoke_phase: f32,
 
@@ -303,6 +327,7 @@ impl Rig {
         let captures = vec![None; preset.blocks.len()];
         let focus = cx.focus_handle();
         focus.focus(window, cx);
+        let explorer = Explorer::new(window, cx);
         let mut rig = Self {
             settings,
             library,
@@ -323,8 +348,10 @@ impl Rig {
             pitch: None,
             view: View::Board,
             practice: Practice::default(),
+            overlay: Overlay::None,
+            explorer,
+            gear_open: false,
             selected: None,
-            settings_open: false,
             hover_gap: None,
             smoke_phase: 0.0,
             devices,
@@ -563,7 +590,6 @@ impl Rig {
         self.captures = vec![None; preset.blocks.len()];
         // Stay on the unit being worked on, if it's still there.
         self.selected = self.selected.filter(|slot| *slot < preset.blocks.len());
-        self.settings_open &= self.selected.is_some();
         self.preset = preset;
         self.last_param = None;
         self.rebuild_chain(cx);
@@ -706,6 +732,7 @@ impl Rig {
                             input.set_value(preset.name.clone(), window, cx);
                         });
                         this.settings.last_tone = Some(preset.name.clone());
+                        this.note_recent(&preset.name);
                         this.save_settings(cx);
                         this.saved_blocks = preset.blocks.clone();
                         this.history.clear();
@@ -715,7 +742,6 @@ impl Rig {
                         this.selected = preset.blocks.iter().position(|block| {
                             matches!(block.kind, BlockKind::Amp | BlockKind::Tube)
                         });
-                        this.settings_open = this.selected.is_some();
                         this.preset = preset;
                         this.adopt_chain(built, cx);
                     }
@@ -886,211 +912,6 @@ impl Rig {
         )
     }
 
-    fn render_meter(&self, label: &'static str, peak: f32, cx: &App) -> impl IntoElement {
-        let db = 20.0 * peak.max(1e-6).log10();
-        let fill = ((db - METER_FLOOR_DB) / -METER_FLOOR_DB).clamp(0.0, 1.0);
-        let color = if peak >= 0.99 {
-            cx.theme().danger
-        } else {
-            cx.theme().success
-        };
-        h_flex()
-            .gap_2()
-            .items_center()
-            .child(div().text_xs().w(px(26.)).child(label))
-            .child(
-                div()
-                    .w(px(110.))
-                    .h(px(4.))
-                    .rounded_sm()
-                    .bg(hairline())
-                    .child(div().h_full().rounded_sm().w(relative(fill)).bg(color)),
-            )
-    }
-
-    fn render_device_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let live = self.engine.is_some();
-        let asio = self.settings.asio_driver.is_some();
-        let picker = |label: &'static str, select: AnyElement| {
-            v_flex()
-                .gap_1()
-                .min_w_0()
-                .child(div().text_xs().text_color(fog()).child(label))
-                .child(select)
-        };
-        h_flex()
-            .gap_3()
-            .p_3()
-            .items_end()
-            .border_b_1()
-            .border_color(hairline())
-            .bg(pane())
-            .child(picker(
-                "Audio driver",
-                Select::new(&self.driver_select)
-                    .w(px(158.))
-                    .into_any_element(),
-            ))
-            .when(!asio, |bar| {
-                bar.child(picker(
-                    "Guitar in",
-                    Select::new(&self.input_select)
-                        .placeholder("Choose your interface")
-                        .w(px(188.))
-                        .into_any_element(),
-                ))
-            })
-            .child(picker(
-                "Channel",
-                Select::new(&self.channel_select)
-                    .w(px(100.))
-                    .into_any_element(),
-            ))
-            .when(!asio, |bar| {
-                bar.child(picker(
-                    "Speakers out",
-                    Select::new(&self.output_select)
-                        .placeholder("Choose an output")
-                        .w(px(188.))
-                        .into_any_element(),
-                ))
-            })
-            .child(
-                Button::new("monitor")
-                    .label(if live {
-                        "Stop monitoring"
-                    } else {
-                        "Start monitoring"
-                    })
-                    .when(!live, |button| button.primary())
-                    .when(live, |button| button.danger())
-                    .on_click(cx.listener(|this, _, _, cx| this.toggle_monitoring(cx))),
-            )
-            .when(!asio, |bar| {
-                bar.child(
-                    Button::new("latency-mode")
-                    .outline()
-                    .tooltip("Low latency takes over your audio devices, so other apps go silent on them while monitoring")
-                    .label(if self.settings.shared_audio {
-                        "Shared audio"
-                    } else {
-                        "Low latency"
-                    })
-                    .on_click(cx.listener(|this, _, _, cx| this.toggle_shared_audio(cx))),
-                )
-            })
-            .child(div().flex_1())
-            .child(Knob::new(
-                "level-input",
-                KNOB_INPUT,
-                self.settings.input_db,
-                px(34.),
-                cx.listener(|this, value: &f32, _, cx| this.set_level(Some(*value), None, cx)),
-            ))
-            .child(Knob::new(
-                "level-output",
-                KNOB_OUTPUT,
-                self.settings.output_db,
-                px(34.),
-                cx.listener(|this, value: &f32, _, cx| this.set_level(None, Some(*value), cx)),
-            ))
-            .child(
-                v_flex()
-                    .gap_1()
-                    .child(self.render_meter("In", self.input_level, cx))
-                    .child(self.render_meter("Out", self.output_level, cx))
-                    .when(live, |column| {
-                        column.child(div().text_xs().text_color(fog()).child(format!(
-                            "{:.0} ms latency ({}), {} glitches",
-                            self.latency.total_ms(),
-                            self.engine.as_ref().map_or("off", |engine| {
-                                match engine.info().mode {
-                                    LatencyMode::Exclusive => "exclusive",
-                                    LatencyMode::Shared => "shared",
-                                    #[cfg(feature = "asio")]
-                                    LatencyMode::Asio => "ASIO",
-                                }
-                            }),
-                            self.glitches
-                        )))
-                    }),
-            )
-    }
-
-    fn render_tones(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        v_flex()
-            .flex_1()
-            .min_h_0()
-            .gap_2()
-            .pt_3()
-            .border_t_1()
-            .border_color(hairline())
-            .child(div().font_semibold().child("Tones"))
-            .child(Input::new(&self.preset_name))
-            .child(
-                Button::new("save")
-                    .small()
-                    .primary()
-                    .label(if self.preset.blocks == self.saved_blocks {
-                        "Save tone"
-                    } else {
-                        "Save changes"
-                    })
-                    .on_click(cx.listener(|this, _, _, cx| this.save_preset(cx))),
-            )
-            .child(
-                v_flex()
-                    .id("presets")
-                    .flex_1()
-                    .min_h_0()
-                    .overflow_y_scroll()
-                    .gap_1()
-                    .children(self.presets.iter().enumerate().map(|(index, entry)| {
-                        let preset = entry.preset.clone();
-                        let current = preset.name == self.preset.name;
-                        Button::new(("preset", index))
-                            .small()
-                            .when(current, |button| button.outline())
-                            .when(!current, |button| button.ghost())
-                            .label(entry.preset.name.clone())
-                            .on_click(cx.listener(move |this, _, window, cx| {
-                                this.load_preset(preset.clone(), window, cx);
-                            }))
-                    })),
-            )
-            .child(
-                h_flex()
-                    .gap_1()
-                    .child(
-                        Button::new("export")
-                            .small()
-                            .ghost()
-                            .label("Export")
-                            .on_click(cx.listener(|this, _, window, cx| {
-                                this.export_pack(window, cx);
-                            })),
-                    )
-                    .child(
-                        Button::new("import")
-                            .small()
-                            .ghost()
-                            .label("Import")
-                            .on_click(cx.listener(|this, _, window, cx| {
-                                this.import_pack(window, cx);
-                            })),
-                    )
-                    .child(
-                        Button::new("folder")
-                            .small()
-                            .ghost()
-                            .label("Folder")
-                            .on_click(cx.listener(|this, _, window, cx| {
-                                this.choose_library(window, cx);
-                            })),
-                    ),
-            )
-    }
-
     fn input_is_microphone(&self) -> bool {
         if self.settings.asio_driver.is_some() {
             return false;
@@ -1105,52 +926,23 @@ impl Rig {
                 name.contains("microphone") || name.contains("webcam")
             })
     }
-
-    fn render_view_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        h_flex()
-            .justify_between()
-            .items_center()
-            .child(
-                h_flex()
-                    .gap_1()
-                    .child(self.render_tab("tab-board", "Board", View::Board, cx))
-                    .child(self.render_tab("tab-practice", "Practice", View::Practice, cx)),
-            )
-            .child(
-                Button::new("tuner")
-                    .small()
-                    .label("Tuner")
-                    .when(self.tuner_open, |button| button.primary())
-                    .when(!self.tuner_open, |button| button.ghost())
-                    .tooltip("Press T")
-                    .on_click(cx.listener(|this, _, _, cx| this.toggle_tuner(cx))),
-            )
-    }
-
-    fn render_tab(
-        &self,
-        id: &'static str,
-        label: &'static str,
-        view: View,
-        cx: &mut Context<Self>,
-    ) -> impl IntoElement {
-        Button::new(id)
-            .small()
-            .label(label)
-            .when(self.view == view, |button| button.primary())
-            .when(self.view != view, |button| button.ghost())
-            .on_click(cx.listener(move |this, _, _, cx| {
-                this.view = view;
-                cx.notify();
-            }))
-    }
 }
 
 impl Render for Rig {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let body = match self.view {
             View::Board => self.render_board_view(window, cx).into_any_element(),
-            View::Practice => self.render_practice_view(cx).into_any_element(),
+            View::Practice => v_flex()
+                .id("practice")
+                .size_full()
+                .overflow_y_scroll()
+                .gap_4()
+                .p_4()
+                .when(self.tuner_open, |column| {
+                    column.child(self.render_tuner(cx))
+                })
+                .child(self.render_practice_view(cx))
+                .into_any_element(),
         };
         div()
             .relative()
@@ -1162,7 +954,9 @@ impl Render for Rig {
             .on_action(cx.listener(|this, _: &RemoveUnit, _, cx| this.remove_selected(cx)))
             .on_action(cx.listener(|this, _: &BypassUnit, _, cx| this.bypass_selected(cx)))
             .on_action(cx.listener(|this, _: &OpenUnit, _, cx| this.open_selected(cx)))
-            .on_action(cx.listener(|this, _: &CloseUnit, _, cx| this.close_selected(cx)))
+            .on_action(cx.listener(|this, _: &CloseUnit, window, cx| {
+                this.close_selected(window, cx);
+            }))
             .on_action(cx.listener(|this, _: &PreviousUnit, _, cx| this.select_step(-1, cx)))
             .on_action(cx.listener(|this, _: &NextUnit, _, cx| this.select_step(1, cx)))
             .on_action(cx.listener(|this, _: &MoveUnitLeft, _, cx| this.move_selected(-1, cx)))
@@ -1177,14 +971,18 @@ impl Render for Rig {
                 this.toggle_monitoring(cx);
             }))
             .on_action(cx.listener(|this, _: &ToggleTuner, _, cx| this.toggle_tuner(cx)))
-            .bg(hsla(0.42, 0.3, 0.035, 0.82))
+            .on_action(cx.listener(|this, _: &ToggleTones, window, cx| {
+                this.toggle_tones(window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &ToggleGear, _, cx| this.toggle_gear(cx)))
+            .bg(hsla(0.42, 0.3, 0.035, 1.0))
             .text_color(cx.theme().foreground)
             .child(self.render_backdrop())
             .child(
                 v_flex()
                     .relative()
                     .size_full()
-                    .child(self.render_device_bar(cx))
+                    .child(self.render_header(cx))
                     .when_some(self.error.clone(), |column, error| {
                         column.child(
                             h_flex()
@@ -1215,48 +1013,24 @@ impl Render for Rig {
                                 .text_color(cx.theme().warning)
                                 .child(
                                     "Guitar in is set to a microphone, which can feed back through \
-                                     speakers. Choose your interface first.",
+                                     speakers. Choose your interface in Audio setup first.",
                                 ),
                         )
                     })
                     .child(
-                        h_flex()
+                        div()
+                            .relative()
                             .flex_1()
                             .min_h_0()
-                            .items_start()
-                            .child(
-                                v_flex()
-                                    .w(px(232.))
-                                    .h_full()
-                                    .flex_shrink_0()
-                                    .gap_3()
-                                    .p_3()
-                                    .border_r_1()
-                                    .border_color(hairline())
-                                    .bg(pane())
-                                    .child(self.render_rack(cx))
-                                    .child(self.render_tones(cx)),
-                            )
-                            .child(
-                                v_flex()
-                                    .id("main")
-                                    .flex_1()
-                                    .h_full()
-                                    .overflow_y_scroll()
-                                    .gap_4()
-                                    .p_4()
-                                    .child(self.render_view_bar(cx))
-                                    .when(self.tuner_open, |column| {
-                                        column.child(self.render_tuner(cx))
-                                    })
-                                    .child(body)
-                                    .child(div().text_xs().text_color(fog()).child(
-                                        "Hearing a clean signal under the amp? Turn off direct \
-                                         monitoring on your interface, so only this app reaches \
-                                         your speakers.",
-                                    )),
-                            ),
-                    ),
+                            .child(body)
+                            .when(self.overlay == Overlay::Tones, |main| {
+                                main.child(self.render_explorer(cx))
+                            })
+                            .when(self.overlay == Overlay::Audio, |main| {
+                                main.child(self.render_audio_panel(cx))
+                            }),
+                    )
+                    .child(self.render_footer(cx)),
             )
     }
 }

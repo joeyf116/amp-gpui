@@ -1,23 +1,30 @@
-# Build a board
+# Build a rig
 
-The board is the row of gear in the middle of the window, running from your
-guitar on the left to your speakers on the right. Sound passes through the units
-in that order. The **Gear** rack on the left holds everything you can add.
+![The Rig view, with the chain strip above a tube head on the stage](../assets/screens/rig.webp)
+
+The chain strip across the top of the window is your rig. It runs from your
+guitar on the left to your speakers on the right, and sound passes through the
+units in that order. Below it, the stage shows the selected unit up close, with
+its knobs. **Add gear** opens the gear drawer, which holds everything you can add.
+
+![Generated gear art: stompboxes, a tube head, and two 4x12 cabinets](../assets/screens/gear.webp)
 
 ## Add, move, and remove gear
 
-- **Add a unit:** drag it from the rack to where you want it. Double-clicking it
-  in the rack places it where that kind of gear usually goes.
+- **Add a unit:** press **Add gear**, or ++g++, then drag a unit from the drawer
+  to where you want it in the chain. Double-clicking it in the drawer places it
+  where that kind of gear usually goes.
 - **Move a unit:** drag it, or select it and press ++alt+left++ or ++alt+right++.
-- **Remove a unit:** select it and press ++delete++, or drag it back to the rack.
+- **Remove a unit:** select it and press ++delete++, or drag it to the open drawer.
 - **Bypass a pedal:** press its footswitch, or select it and press ++b++.
-- **Tidy up:** **Arrange in usual order** sorts the board into a common order.
+- **Tidy up:** **Arrange** sorts the chain into a common order.
   It's a guideline, and you can drag anything back out of it.
 
 The usual order is compression and drives first, then the gate, amp, and cabinet,
 then modulation, delay, and reverb.
 
-Double-click a unit, or select it and press ++enter++, to open its settings. Every
+Click a unit to put it on the stage. Pedals, amps, and captures have their knobs
+on the faceplate. A cabinet's **Level** knob sits in the panel beside it. Every
 edit can be undone with ++ctrl+z++. See [Keyboard and mouse](controls.md) for
 all the controls.
 
@@ -25,23 +32,24 @@ all the controls.
 
 These all work with no files.
 
-| Unit | What it does | Controls |
-| --- | --- | --- |
-| Understory amp | An original amp model | Gain, Bass, Mid, Treble, Presence, Master |
-| Cabinet | An original closed-back cabinet voice | Level |
-| Compressor | Evens out picking dynamics | Threshold, Ratio, Release, Level |
-| Drive | A soft-clipping drive for pushing an amp | Drive, Level |
-| Noise gate | Cuts hum between notes | Threshold, Release |
-| Chorus | One modulated delay line | Rate, Depth, Mix |
-| Delay | Repeats of up to 1.5 seconds | Time, Feedback, Mix |
-| Reverb | A plate-like reverb | Size, Damping, Mix |
+| Name | Type | What it does | Controls |
+| --- | --- | --- | --- |
+| Understory | Tube head | An original amp model | Gain, Bass, Mid, Treble, Presence, Master |
+| Deadfall 412 | 4x12 cabinet | An original closed-back cabinet voice | Level |
+| Slow Sap | Compressor | Evens out picking dynamics | Threshold, Ratio, Release, Level |
+| Cinder | Overdrive | A soft-clipping drive for pushing an amp | Drive, Level |
+| Stillwater | Noise gate | Cuts hum between notes | Threshold, Release |
+| Mycelium | Chorus | One modulated delay line | Rate, Depth, Mix |
+| Long Ridge | Delay | Repeats of up to 1.5 seconds | Time, Feedback, Mix |
+| Fog Bank | Reverb | A plate-like reverb | Size, Damping, Mix |
 
 ## Add your own amps and pedals
 
-Press **Add .nam** in the rack and choose one or more capture files. Each one is
+Press **Add .nam** in the gear drawer and choose one or more capture files. Each one is
 checked, copied into your library, and listed under **Amp captures** or **Pedal
-captures**, depending on what the file says it is. Drag it onto the board like
-any other unit.
+captures**, depending on what the file says it is. Drag it onto the chain like
+any other unit. A capture's own name goes on its faceplate, and a pedal capture
+picks its look from words in that name, such as `fuzz` or `delay`.
 
 A capture has three controls:
 
@@ -52,7 +60,7 @@ A capture has three controls:
 | Quality | Trades CPU for detail, on captures that support it |
 
 Captures need to be **48 kHz**, which most are. The app can't resample a capture,
-so any other rate gets an error when you put it on the board.
+so any other rate gets an error when you put it on the chain.
 
 Captures often have their own license, so check the terms of any file before you
 share it. The [NAM project](https://www.neuralampmodeler.com/) has tools for
@@ -66,9 +74,11 @@ On other captures, it does nothing.
 
 ## Use your own cabinet
 
-1. Open the settings of a **Cabinet** on the board.
-2. Press **Load cab IR** and choose a `.wav` impulse response.
+1. Select a cabinet in the chain.
+2. Press **Load cab IR** in the panel beside it, and choose a `.wav` impulse
+   response.
 
+The cabinet opens up to show bare speakers, and the file's name replaces its own.
 The file is copied into your library. Stereo files are mixed to mono, the rate
 is converted to match the app, and only the first half second is used. Longer
 files are mostly room sound and cost CPU on every block.
@@ -76,13 +86,13 @@ files are mostly room sound and cost CPU on every block.
 !!! warning "Watch for two cabinets"
 
     Some captures already include a cabinet. If yours does, the app warns you, and
-    you should remove the **Cabinet** from the board so you don't hear two.
+    you should remove the cabinet from the chain so you don't hear two.
 
 ## What makes a good gain structure
 
-- Set **Input** at the top of the window so hard picking is near the top of the
-  **In** meter without turning it red.
-- Use **Output** at the top of the window for your overall volume. It doesn't
+- Set **Input** in the header so hard picking is near the top of its meter
+  without turning it red.
+- Use **Output** in the header for your overall volume. It doesn't
   change your tone.
 - On the Understory amp, raising **Gain** adds dirt without much of a jump in
   volume, because the output is trimmed to match. **Master** sets the level.

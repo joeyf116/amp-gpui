@@ -35,9 +35,9 @@ fn main() {
                 title: Some("Amp GPUI".into()),
                 ..Default::default()
             }),
-            window_bounds: Some(WindowBounds::centered(size(px(1280.), px(800.)), cx)),
+            window_bounds: Some(WindowBounds::centered(size(px(1360.), px(840.)), cx)),
             window_min_size: Some(size(px(1080.), px(640.))),
-            window_background: WindowBackgroundAppearance::Blurred,
+            window_background: WindowBackgroundAppearance::Opaque,
             ..Default::default()
         };
         if let Err(error) =
