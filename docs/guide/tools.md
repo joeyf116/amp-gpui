@@ -38,7 +38,27 @@ first 15 frets. The root is green. **Showing notes** switches the labels between
 names and intervals, such as `b3` and `5`, and the row at the right spells the scale
 out.
 
-Play a note and it lights up wherever that exact pitch can be fretted, then fades.
+Play a note and one spot lights up: where you most likely played it. Play a chord
+and its name appears above the neck, with its shape lit on the strings.
+
+### How it finds the spot
+
+The same pitch exists in up to five places on a guitar, and pitch alone can't say
+which. The fretboard uses two clues:
+
+- **Your hand.** It follows where you've been playing, and assumes the next note is
+  close by. To tell it directly, click a fret number under the neck.
+- **The string.** Thicker, shorter strings are stiffer, which shifts their high
+  overtones. Once a note has rung for about a third of a second, the fretboard reads
+  that and can move the note to the string that fits.
+
+Press **Learn my guitar** and pluck each open string when asked, low E first. It
+measures your actual strings, which makes that second clue much stronger. Do it again
+after changing string gauge.
+
+It's a best guess, not a certainty, and the first note of a phrase is the hardest,
+since there's no hand position to go on yet. Clean tone isn't needed, because it reads
+your guitar before the amp, but the bridge pickup and a clean pick attack help.
 
 | Color | Meaning |
 | --- | --- |
@@ -47,8 +67,23 @@ Play a note and it lights up wherever that exact pitch can be fretted, then fade
 | White | What you just played, in the scale |
 | Amber | What you just played, outside the scale |
 
-The note comes from the tuner, so the fretboard follows one note at a time. Chords
-show unreliably, and very fast runs can skip notes.
+### Chords
+
+Chords are heard by finding the note that best explains the sound, removing it, and
+repeating. The fretboard shows a chord once it holds steady, which takes about a
+quarter of a second. It names major, minor, power, seventh, sixth, suspended, add9, ninth,
+diminished, and augmented chords, with slash chords when the bass isn't the root.
+
+A chord's shape on the neck is the one a single hand could hold nearest your position,
+so an unusual voicing can land elsewhere. An octave can hide in the overtones of the
+note below it, so strings skipped inside a shape are filled with a chord tone under
+your hand, and a string you muted there can show as played. Very fast changes and heavily muted strums
+are harder to hear.
+
+On modeled guitars with deliberately untidy strings, chords were named correctly 97
+percent of the time, and the string was right about 76 percent of the time from the
+sound alone, before hand position or learning. Those aren't measurements on a real
+guitar, so yours will differ.
 
 The included scales are minor and major pentatonic, blues, major, natural, harmonic,
 and melodic minor, and the Dorian, Phrygian, Lydian, Mixolydian, and Locrian modes.

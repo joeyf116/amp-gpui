@@ -46,6 +46,8 @@ pub struct Settings {
     pub scale: String,
     /// Set to label the fretboard with intervals rather than note names.
     pub fret_intervals: bool,
+    /// How stiff each open string of this guitar is, once it has been learned.
+    pub string_stiffness: Option<[f32; 6]>,
 }
 
 /// A, the key most guitar players reach for first.
@@ -86,6 +88,7 @@ impl Default for Settings {
             key: default_key(),
             scale: String::new(),
             fret_intervals: false,
+            string_stiffness: None,
         }
     }
 }

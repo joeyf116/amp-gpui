@@ -63,10 +63,26 @@ notes moved to the detail panel. Favorites and recent tones are stored by name i
 listens while the panel is open: `sync_tuner` follows the overlay on each meter tick,
 however it was closed. The needle eases toward each reading so it doesn't jump.
 
-The fretboard is pure note arithmetic plus drawing. `positions` lists every place a
-MIDI note can be fretted, and a tuner reading goes on a short trail that fades. Pitch
-detection follows one note at a time, so the neck shows single notes rather than
-chords.
+`Hearing` in `fretboard.rs` keeps no UI state, so its tests can feed it sound. It takes what `Spectrum` in `crates/amp-dsp/src/listen.rs`
+hears. `Spectrum::notes` finds several notes by iterative harmonic cancellation: it
+takes the note whose harmonics best explain the spectrum, removes what that note
+accounts for, and repeats. Each partial's removal is capped by its neighbours, so a
+partial two notes share isn't all taken by the first. `chord_name` matches the result
+against chord shapes, and a chord has to hold for two looks before it shows.
+
+A pitch can't say where it was fretted, so `place_note` scores each place by hand
+distance and by stiffness. Stiffness is the inharmonicity B in
+`partial(n) = n * f0 * sqrt(1 + B * n * n)`, fitted from the exact partial frequencies
+(`Spectrum::stiffness`). It grows by `2^(fret / 6)` as a string gets shorter, so one
+open-string reading predicts every fret, which is how **Learn my guitar** works. That
+idea comes from published work on string classification, which reports about 83 to 85
+percent from audio alone and 91 to 93 percent with playability added.
+`place_chord` searches for the shape with one note per string, in order, within a
+four-fret stretch.
+
+`crates/amp-dsp/tests/listen.rs` measures all this on modeled plucks. Run it with
+`--nocapture` to see the numbers. Testing on recordings of real guitars would be the
+next step, since the model can't show everything a pickup does.
 
 ## TONE3000
 

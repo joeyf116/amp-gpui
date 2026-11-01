@@ -1,9 +1,17 @@
 //! A fretboard that shows a key and scale, and lights up what's being played.
-//! Notes come from the tuner, which hears one note at a time, so it shows the
-//! exact pitch at every place it can be fretted, with a short trail behind it.
+//!
+//! A pitch alone can't say where it was fretted, since most notes exist in
+//! several places. So a single note is placed by two clues: where the hand has
+//! been, and how stiff the string sounds, which differs between two places for
+//! the same pitch. A chord is placed by finding a shape one hand could hold.
 
 use super::{Choice, Rig};
-use crate::style::{fog, glow, hairline, moss};
+use crate::{
+    art::PRINT_FONT,
+    style::{fog, glow, hairline, moss},
+};
+use amp_dsp::{Pitch, Spectrum, chord_name};
+use amp_engine::ENGINE_RATE;
 use gpui_kit::{
     component::{
         ActiveTheme, IndexPath, Sizable, StyledExt,
@@ -12,6 +20,7 @@ use gpui_kit::{
         select::{Select, SelectEvent, SelectState},
         v_flex,
     },
+    prelude::FluentBuilder,
     *,
 };
 
@@ -23,7 +32,25 @@ const STRING_GAP: f32 = 28.0;
 const NUT_SHARE: f32 = 0.05;
 const DOT: f32 = 22.0;
 /// How long a played note stays lit, in seconds.
-const TRAIL: f32 = 1.4;
+const TRAIL: f32 = 0.8;
+/// How stiff each open string is on a typical 10-46 set, in the same order as
+/// `TUNING`. Learning a guitar replaces these.
+const STRING_STIFFNESS: [f32; 6] = [1.3e-5, 3.9e-5, 1.05e-4, 8.9e-5, 1.9e-4, 4.0e-4];
+/// How far up the neck the hand reaches without moving, either side of its center.
+const HAND_REACH: f32 = 1.5;
+/// How heavily a stiffness mismatch counts against a place, in frets of hand
+/// movement. A learned guitar earns much more trust than book values.
+const STIFFNESS_WEIGHT: f32 = 3.0;
+const LEARNED_WEIGHT: f32 = 8.0;
+/// How quickly the hand estimate follows new notes.
+const HAND_FOLLOW: f32 = 0.4;
+/// A note has to ring this long before its stiffness can be read.
+const SETTLE: f32 = 0.3;
+/// The widest stretch a chord shape can use, in frets.
+const CHORD_SPAN: i32 = 4;
+/// Clean readings of each open string needed to learn it.
+const LEARN_READINGS: usize = 5;
+const STRING_NAMES: [&str; 6] = ["high E", "B", "G", "D", "A", "low E"];
 const NOTES: [&str; 12] = [
     "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B",
 ];
@@ -82,16 +109,154 @@ fn in_scale(scale: &[i32], degree: usize) -> bool {
     scale.contains(&(degree as i32))
 }
 
+/// Picks where a single note was played. Stays near the hand, and lets a
+/// stiffness reading pull it to another string when one is available.
+fn place_note(
+    midi: i32,
+    hand: Option<f32>,
+    stiffness: Option<f32>,
+    strings: &[f32; 6],
+    learned: bool,
+) -> Option<(usize, i32)> {
+    let weight = if learned {
+        LEARNED_WEIGHT
+    } else {
+        STIFFNESS_WEIGHT
+    };
+    let cost = |(string, fret): &(usize, i32)| {
+        let reach = match hand {
+            _ if *fret == 0 => 0.5,
+            Some(hand) => ((*fret as f32 - hand).abs() - HAND_REACH).max(0.0),
+            // With nothing to go on, players start low on the neck.
+            None => *fret as f32 * 0.2,
+        };
+        let sound = stiffness.map_or(0.0, |measured| {
+            let expected = strings[*string] * 2.0_f32.powf(*fret as f32 / 6.0);
+            (measured / expected).ln().abs() * weight
+        });
+        reach + sound
+    };
+    positions(midi).min_by(|a, b| cost(a).total_cmp(&cost(b)))
+}
+
+/// Finds the shape one hand could hold for `notes`, low to high, with each note
+/// on its own string and the low notes on the low strings.
+fn place_chord(notes: &[i32], hand: Option<f32>) -> Option<Vec<(usize, i32)>> {
+    fn search(
+        notes: &[i32],
+        strings: std::ops::Range<usize>,
+        chosen: &mut Vec<(usize, i32)>,
+        hand: Option<f32>,
+        best: &mut Option<(f32, Vec<(usize, i32)>)>,
+    ) {
+        let Some((note, rest)) = notes.split_first() else {
+            let fretted = || {
+                chosen
+                    .iter()
+                    .map(|(_, fret)| *fret)
+                    .filter(|fret| *fret > 0)
+            };
+            let low = fretted().min().unwrap_or(0);
+            let high = fretted().max().unwrap_or(0);
+            if high - low > CHORD_SPAN {
+                return;
+            }
+            let opens = chosen.iter().filter(|(_, fret)| *fret == 0).count();
+            let center = (low + high) as f32 / 2.0;
+            let away = hand.map_or(center * 0.3, |hand| (center - hand).abs() * 0.3);
+            let cost = (high - low) as f32 + away - opens as f32 * 0.5;
+            if best.as_ref().is_none_or(|(lowest, _)| cost < *lowest) {
+                *best = Some((cost, chosen.clone()));
+            }
+            return;
+        };
+        // Strings run high to low, so a higher note takes a lower index.
+        for string in strings.clone().rev() {
+            let fret = note - TUNING[string];
+            if (0..=FRETS).contains(&fret) {
+                chosen.push((string, fret));
+                search(rest, 0..string, chosen, hand, best);
+                chosen.pop();
+            }
+        }
+    }
+    let mut best = None;
+    search(notes, 0..TUNING.len(), &mut Vec::new(), hand, &mut best);
+    best.map(|(_, shape)| shape)
+}
+
+/// Fills strings skipped inside a shape. An octave hides in the overtones of the
+/// note below it, and a strum nearly always hits the strings in between, so each
+/// gap takes the chord tone that sits under the hand.
+fn fill_gaps(shape: &mut Vec<(usize, i32)>, notes: &[i32]) {
+    let classes: Vec<i32> = notes.iter().map(|note| note.rem_euclid(12)).collect();
+    let fretted = || shape.iter().map(|(_, fret)| *fret).filter(|fret| *fret > 0);
+    let low = fretted().min().unwrap_or(0);
+    let high = fretted().max().unwrap_or(0);
+    let top = shape.iter().map(|(string, _)| *string).min().unwrap_or(0);
+    let bottom = shape.iter().map(|(string, _)| *string).max().unwrap_or(0);
+    let center = (low + high) as f32 / 2.0;
+    let mut gaps = Vec::new();
+    for (string, open) in TUNING.iter().enumerate().take(bottom).skip(top) {
+        if shape.iter().any(|(taken, _)| *taken == string) {
+            continue;
+        }
+        let in_reach = |fret: &i32| *fret == 0 || (low..=low.max(1) + CHORD_SPAN).contains(fret);
+        let tone = (0..=FRETS)
+            .filter(in_reach)
+            .filter(|fret| classes.contains(&(open + fret).rem_euclid(12)))
+            .min_by(|a, b| {
+                // Down by the nut, players let open strings ring.
+                let away = |fret: &i32| match fret {
+                    0 if high <= CHORD_SPAN => 0.0,
+                    _ => (*fret as f32 - center).abs() + 0.5,
+                };
+                away(a).total_cmp(&away(b))
+            });
+        gaps.extend(tone.map(|fret| (string, fret)));
+    }
+    shape.extend(gaps);
+}
+
+fn median(readings: &mut [f32]) -> f32 {
+    readings.sort_by(f32::total_cmp);
+    readings[readings.len() / 2]
+}
+
 struct Played {
+    string: usize,
+    fret: i32,
     midi: i32,
     at: f32,
 }
 
-/// The fretboard's pickers and the trail of recent notes.
+/// Learning a guitar's strings, one open string at a time, low E first.
+struct Learn {
+    string: usize,
+    readings: Vec<f32>,
+    strings: [f32; 6],
+}
+
+/// The fretboard's pickers, and what it has heard lately.
 pub(super) struct Fretboard {
     key_select: Entity<SelectState<Vec<Choice>>>,
     scale_select: Entity<SelectState<Vec<Choice>>>,
+    pub(super) hearing: Hearing,
+}
+
+/// What the fretboard has heard lately.
+#[derive(Default)]
+pub(super) struct Hearing {
     played: Vec<Played>,
+    /// Where the fretting hand seems to be, as a fret.
+    hand: Option<f32>,
+    chord: Option<(String, f32)>,
+    /// The note set from the last look, as a chord has to hold for two.
+    last_heard: Vec<i32>,
+    /// The note ringing now, and when it started.
+    ringing: Option<(i32, f32)>,
+    measured: bool,
+    learn: Option<Learn>,
 }
 
 impl Fretboard {
@@ -140,20 +305,148 @@ impl Fretboard {
         let board = Self {
             key_select,
             scale_select,
-            played: Vec::new(),
+            hearing: Hearing::default(),
         };
         (board, subscriptions)
     }
+}
 
-    /// Lights `hertz`, or keeps it lit if it's still sounding.
-    pub(super) fn play(&mut self, hertz: f32, now: f32) {
-        let midi = midi_note(hertz);
-        self.played.retain(|note| note.midi != midi);
-        self.played.push(Played { midi, at: now });
+impl Hearing {
+    /// Takes in the latest audio, and returns a guitar's strings once learned.
+    pub(super) fn hear(
+        &mut self,
+        samples: &[f32],
+        pitch: Option<Pitch>,
+        now: f32,
+        strings: &[f32; 6],
+        learned: bool,
+    ) -> Option<[f32; 6]> {
+        let spectrum = Spectrum::new(samples, ENGINE_RATE);
+        let mut finished = None;
+        if self.learn.is_some() {
+            finished = self.learn_string(spectrum.as_ref(), pitch);
+        } else if let Some(spectrum) = &spectrum {
+            let heard = spectrum.notes();
+            let chord = chord_name(&heard);
+            match chord {
+                Some(name) if heard == self.last_heard => {
+                    self.show_chord(name, &heard, now);
+                }
+                Some(_) => self.last_heard = heard,
+                None => {
+                    self.last_heard.clear();
+                    if let Some(pitch) = pitch {
+                        self.show_note(spectrum, pitch, now, strings, learned);
+                    }
+                }
+            }
+        }
+        if spectrum.is_none() {
+            self.ringing = None;
+        }
+        self.played.retain(|note| now - note.at < TRAIL);
+        if self.chord.as_ref().is_some_and(|(_, at)| now - at > TRAIL) {
+            self.chord = None;
+        }
+        finished
     }
 
-    pub(super) fn fade(&mut self, now: f32) {
-        self.played.retain(|note| now - note.at < TRAIL);
+    fn follow_hand(&mut self, frets: impl Iterator<Item = i32>) {
+        let frets: Vec<f32> = frets
+            .filter(|fret| *fret > 0)
+            .map(|fret| fret as f32)
+            .collect();
+        if frets.is_empty() {
+            return;
+        }
+        let center = frets.iter().sum::<f32>() / frets.len() as f32;
+        self.hand = Some(
+            self.hand
+                .map_or(center, |hand| hand + (center - hand) * HAND_FOLLOW),
+        );
+    }
+
+    fn show_chord(&mut self, name: String, notes: &[i32], now: f32) {
+        self.chord = Some((name, now));
+        self.ringing = None;
+        if let Some(mut shape) = place_chord(notes, self.hand) {
+            fill_gaps(&mut shape, notes);
+            self.follow_hand(shape.iter().map(|(_, fret)| *fret));
+            self.played.clear();
+            self.played
+                .extend(shape.into_iter().map(|(string, fret)| Played {
+                    string,
+                    fret,
+                    midi: TUNING[string] + fret,
+                    at: now,
+                }));
+        }
+    }
+
+    fn show_note(
+        &mut self,
+        spectrum: &Spectrum,
+        pitch: Pitch,
+        now: f32,
+        strings: &[f32; 6],
+        learned: bool,
+    ) {
+        let midi = midi_note(pitch.hertz);
+        let since = match self.ringing {
+            Some((note, since)) if note == midi => since,
+            _ => {
+                self.ringing = Some((midi, now));
+                self.measured = false;
+                now
+            }
+        };
+        let current = self.played.iter_mut().find(|note| note.midi == midi);
+        // Stiffness takes a clean stretch of the note, so it gets one look, once
+        // the note has settled, and can move the first guess.
+        let settled = now - since >= SETTLE && !self.measured;
+        if let (Some(note), false) = (current, settled) {
+            note.at = now;
+            return;
+        }
+        let stiffness = settled.then(|| spectrum.stiffness(pitch.hertz)).flatten();
+        self.measured |= settled;
+        if let Some((string, fret)) = place_note(midi, self.hand, stiffness, strings, learned) {
+            self.played.retain(|note| note.midi != midi);
+            self.played.push(Played {
+                string,
+                fret,
+                midi,
+                at: now,
+            });
+            if now == since {
+                self.follow_hand(std::iter::once(fret));
+            }
+        }
+    }
+
+    fn learn_string(
+        &mut self,
+        spectrum: Option<&Spectrum>,
+        pitch: Option<Pitch>,
+    ) -> Option<[f32; 6]> {
+        let learn = self.learn.as_mut()?;
+        let open = TUNING[learn.string];
+        let reading = pitch
+            .filter(|pitch| midi_note(pitch.hertz) == open)
+            .and_then(|pitch| spectrum?.stiffness(pitch.hertz));
+        learn.readings.extend(reading);
+        if learn.readings.len() < LEARN_READINGS {
+            return None;
+        }
+        learn.strings[learn.string] = median(&mut learn.readings);
+        learn.readings.clear();
+        if learn.string == 0 {
+            let strings = learn.strings;
+            self.learn = None;
+            return Some(strings);
+        }
+        learn.string -= 1;
+        None
     }
 }
 
@@ -191,6 +484,23 @@ fn marker(
 }
 
 impl Rig {
+    pub(super) fn string_stiffness(&self) -> ([f32; 6], bool) {
+        match self.settings.string_stiffness {
+            Some(strings) => (strings, true),
+            None => (STRING_STIFFNESS, false),
+        }
+    }
+
+    fn toggle_learning(&mut self, cx: &mut Context<Self>) {
+        let learning = self.fretboard.hearing.learn.is_some();
+        self.fretboard.hearing.learn = (!learning).then(|| Learn {
+            string: TUNING.len() - 1,
+            readings: Vec::new(),
+            strings: STRING_STIFFNESS,
+        });
+        cx.notify();
+    }
+
     fn fret_label(&self, midi: i32) -> SharedString {
         let degree = degree(midi, self.settings.key);
         if self.settings.fret_intervals {
@@ -200,15 +510,17 @@ impl Rig {
         }
     }
 
-    fn render_neck(&self, cx: &App) -> impl IntoElement {
+    fn render_neck(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let key = self.settings.key;
         let (_, scale) = SCALES[scale_index(&self.settings.scale)];
         let height = STRING_GAP * TUNING.len() as f32;
         let root = moss();
         let surface = hsla(0.42, 0.04, 0.11, 1.0);
         let on_root = cx.theme().primary_foreground;
-        let tone = hsla(0.42, 0.05, 0.3, 1.0);
-        let text = cx.theme().foreground;
+        // Scale notes step back while something is lit, so the played note leads.
+        let quiet = !self.fretboard.hearing.played.is_empty();
+        let tone = hsla(0.42, 0.05, if quiet { 0.2 } else { 0.3 }, 1.0);
+        let text = cx.theme().foreground.opacity(if quiet { 0.5 } else { 1.0 });
         let out_of_key = cx.theme().warning;
         let neck = canvas(
             |_, _, _| {},
@@ -286,41 +598,46 @@ impl Rig {
             }
         }
         let now = self.smoke_phase;
-        let lit = self.fretboard.played.iter().flat_map(|note| {
+        let lit = self.fretboard.hearing.played.iter().map(|note| {
             let fading = (1.0 - (now - note.at) / TRAIL).clamp(0.0, 1.0);
             let color = if in_scale(scale, degree(note.midi, key)) {
                 hsla(0.4, 0.26, 0.93, 1.0)
             } else {
                 out_of_key
             };
-            let label = self.fret_label(note.midi);
-            positions(note.midi).map(move |(string, fret)| {
-                marker(
-                    string,
-                    fret,
-                    label.clone(),
-                    color.opacity(fading),
-                    color,
-                    on_root.opacity(fading),
-                )
-                .shadow(vec![glow(0.8 * fading, 14.0)])
-            })
+            marker(
+                note.string,
+                note.fret,
+                self.fret_label(note.midi),
+                color.opacity(fading),
+                color,
+                on_root.opacity(fading),
+            )
+            .shadow(vec![glow(0.8 * fading, 14.0)])
         });
         let dots: Vec<Div> = dots.into_iter().chain(lit).collect();
         let numbers: Vec<_> = INLAYS
             .iter()
             .map(|fret| {
+                let fret = *fret;
                 div()
+                    .id(("fret-number", fret as usize))
                     .absolute()
                     .left(relative(
-                        NUT_SHARE + (1.0 - NUT_SHARE) * fret_share(*fret as f32 - 0.5),
+                        NUT_SHARE + (1.0 - NUT_SHARE) * fret_share(fret as f32 - 0.5),
                     ))
-                    .ml(px(-10.))
-                    .w(px(20.))
+                    .ml(px(-12.))
+                    .w(px(24.))
                     .text_center()
                     .text_xs()
                     .text_color(fog())
+                    .cursor_pointer()
+                    .hover(|number| number.text_color(moss()))
                     .child(fret.to_string())
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.fretboard.hearing.hand = Some(fret as f32);
+                        cx.notify();
+                    }))
             })
             .collect();
         v_flex()
@@ -351,6 +668,18 @@ impl Rig {
             })
             .collect::<Vec<_>>()
             .join("   ");
+        let chord = self
+            .fretboard
+            .hearing
+            .chord
+            .as_ref()
+            .map(|(name, _)| name.clone());
+        let learning = self.fretboard.hearing.learn.as_ref().map(|learn| {
+            format!(
+                "Pluck the open {} string until this moves on",
+                STRING_NAMES[learn.string]
+            )
+        });
         v_flex()
             .gap_2()
             .p_4()
@@ -386,22 +715,221 @@ impl Rig {
                                 cx.notify();
                             })),
                     )
+                    .child(
+                        Button::new("learn-guitar")
+                            .small()
+                            .outline()
+                            .label(if learning.is_some() {
+                                "Stop learning"
+                            } else if self.settings.string_stiffness.is_some() {
+                                "Relearn my guitar"
+                            } else {
+                                "Learn my guitar"
+                            })
+                            .tooltip("Pluck each open string, so it can tell your strings apart")
+                            .on_click(cx.listener(|this, _, _, cx| this.toggle_learning(cx))),
+                    )
+                    .when_some(learning, |row, prompt| {
+                        row.child(div().text_sm().text_color(moss()).child(prompt))
+                    })
                     .child(div().flex_1())
+                    .when_some(chord, |row, chord| {
+                        row.child(
+                            div()
+                                .font_family(PRINT_FONT)
+                                .font_semibold()
+                                .text_lg()
+                                .text_color(moss())
+                                .child(chord),
+                        )
+                    })
                     .child(div().text_sm().text_color(fog()).child(spelled)),
             )
             .child(self.render_neck(cx))
+            .child(div().text_xs().text_color(fog()).child(
+                "Shows where each note most likely is, from your hand's position and the sound of \
+                 the string. Click a fret number to say where your hand is.",
+            ))
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{SCALES, degree, fret_share, in_scale, midi_note, positions, scale_index};
+    use super::{
+        Hearing, SCALES, STRING_STIFFNESS, degree, fret_share, in_scale, median, midi_note,
+        place_chord, place_note, positions, scale_index,
+    };
 
     #[test]
     fn a_pitch_shows_everywhere_it_can_be_fretted() {
         // Middle A: 5th fret on the high E, 10th on the B, and so on down.
         let found: Vec<_> = positions(69).collect();
         assert_eq!(found, [(0, 5), (1, 10), (2, 14)]);
+    }
+
+    const RATE: f32 = 48_000.0;
+    const FRAMES: usize = 16_384;
+    const LOOK: f32 = 0.05;
+
+    /// Plucks a fret on each listed string, as `(string, fret)`.
+    fn sound(spots: &[(usize, i32)]) -> Vec<f32> {
+        let mut buffer = vec![0.0; FRAMES];
+        for (string, fret) in spots {
+            let root = amp_dsp::midi_hertz(super::TUNING[*string] + fret);
+            let bend = STRING_STIFFNESS[*string] * 2.0_f32.powf(*fret as f32 / 6.0);
+            for partial in 1..=24 {
+                let number = partial as f32;
+                let hertz = number * root * (1.0 + bend * number * number).sqrt();
+                if hertz > 12_000.0 {
+                    break;
+                }
+                for (index, sample) in buffer.iter_mut().enumerate() {
+                    let time = index as f32 / RATE;
+                    *sample += (std::f32::consts::TAU * hertz * time).sin() * 0.08 / number;
+                }
+            }
+        }
+        buffer
+    }
+
+    /// Feeds the same sound in for `looks` meter ticks.
+    fn listen(hearing: &mut Hearing, spots: &[(usize, i32)], looks: usize, now: &mut f32) {
+        let buffer = sound(spots);
+        let hertz = amp_dsp::midi_hertz(super::TUNING[spots[0].0] + spots[0].1);
+        let pitch = (spots.len() == 1).then(|| amp_dsp::Pitch::from_hertz(hertz));
+        for _ in 0..looks {
+            hearing.hear(&buffer, pitch, *now, &STRING_STIFFNESS, false);
+            *now += LOOK;
+        }
+    }
+
+    #[test]
+    fn a_single_note_lights_one_spot() {
+        let mut hearing = Hearing {
+            hand: Some(5.0),
+            ..Hearing::default()
+        };
+        let mut now = 0.0;
+        listen(&mut hearing, &[(0, 5)], 3, &mut now);
+        assert_eq!(hearing.played.len(), 1);
+        assert_eq!((hearing.played[0].string, hearing.played[0].fret), (0, 5));
+        assert!(hearing.chord.is_none());
+    }
+
+    #[test]
+    fn a_chord_gets_its_name_and_one_spot_per_string() {
+        let mut hearing = Hearing::default();
+        let mut now = 0.0;
+        let shape = [(5, 0), (4, 2), (3, 2), (2, 1), (1, 0), (0, 0)];
+        listen(&mut hearing, &shape, 3, &mut now);
+        let name = hearing.chord.as_ref().map(|(name, _)| name.as_str());
+        assert_eq!(name, Some("E"));
+        let mut lit: Vec<_> = hearing
+            .played
+            .iter()
+            .map(|note| (note.string, note.fret))
+            .collect();
+        lit.sort_unstable();
+        assert_eq!(lit, [(0, 0), (1, 0), (2, 1), (3, 2), (4, 2), (5, 0)]);
+    }
+
+    #[test]
+    fn gaps_take_a_chord_tone_under_the_hand() {
+        // G major, with the B and top G hidden in the overtones of the notes below.
+        let mut shape = vec![(5, 3), (4, 2), (3, 0), (0, 3)];
+        super::fill_gaps(&mut shape, &[43, 47, 50, 67]);
+        shape.sort_unstable();
+        assert_eq!(shape, [(0, 3), (1, 0), (2, 0), (3, 0), (4, 2), (5, 3)]);
+    }
+
+    #[test]
+    fn a_held_note_can_move_once_its_string_is_heard() {
+        // A3 on the A string's 12th fret, with the hand down at the 7th.
+        let mut hearing = Hearing {
+            hand: Some(7.0),
+            ..Hearing::default()
+        };
+        let mut now = 0.0;
+        listen(&mut hearing, &[(4, 12)], 1, &mut now);
+        assert_eq!(hearing.played[0].string, 3);
+        listen(&mut hearing, &[(4, 12)], 8, &mut now);
+        assert_eq!((hearing.played[0].string, hearing.played[0].fret), (4, 12));
+    }
+
+    #[test]
+    fn learning_measures_each_open_string_in_turn() {
+        let mut hearing = Hearing {
+            learn: Some(super::Learn {
+                string: 5,
+                readings: Vec::new(),
+                strings: [0.0; 6],
+            }),
+            ..Hearing::default()
+        };
+        let mut learned = None;
+        for string in (0..6).rev() {
+            let buffer = sound(&[(string, 0)]);
+            let hertz = amp_dsp::midi_hertz(super::TUNING[string]);
+            let pitch = Some(amp_dsp::Pitch::from_hertz(hertz));
+            for _ in 0..super::LEARN_READINGS {
+                learned = learned.or(hearing.hear(&buffer, pitch, 0.0, &STRING_STIFFNESS, false));
+            }
+        }
+        let learned = learned.expect("every string was heard");
+        for (found, truth) in learned.iter().zip(STRING_STIFFNESS) {
+            assert!((found / truth).ln().abs() < 0.4, "{found} against {truth}");
+        }
+        assert!(hearing.learn.is_none());
+    }
+
+    fn note(midi: i32, hand: Option<f32>, stiffness: Option<f32>) -> Option<(usize, i32)> {
+        place_note(midi, hand, stiffness, &STRING_STIFFNESS, false)
+    }
+
+    #[test]
+    fn a_note_lands_once_near_the_hand() {
+        // Middle A, in three hand positions.
+        assert_eq!(note(69, Some(5.0), None), Some((0, 5)));
+        assert_eq!(note(69, Some(10.0), None), Some((1, 10)));
+        assert_eq!(note(69, Some(14.0), None), Some((2, 14)));
+    }
+
+    #[test]
+    fn with_no_hand_yet_it_starts_low_on_the_neck() {
+        assert_eq!(note(57, None, None), Some((2, 2)));
+    }
+
+    #[test]
+    fn a_stiff_sound_pulls_a_note_to_the_thicker_string() {
+        // A3 near the 7th fret could be the D string, but it sounds like the
+        // low E at the 17th's neighbor: here, the A string at the 12th.
+        let on_a_string = STRING_STIFFNESS[4] * 2.0_f32.powf(12.0 / 6.0);
+        assert_eq!(note(57, Some(7.0), None), Some((3, 7)));
+        assert_eq!(note(57, Some(7.0), Some(on_a_string)), Some((4, 12)));
+    }
+
+    #[test]
+    fn an_open_e_chord_lands_on_its_shape() {
+        let mut shape = place_chord(&[40, 47, 52, 56, 59, 64], None).unwrap();
+        shape.sort_unstable();
+        assert_eq!(shape, [(0, 0), (1, 0), (2, 1), (3, 2), (4, 2), (5, 0)]);
+    }
+
+    #[test]
+    fn a_barre_chord_stays_within_one_hand() {
+        let shape = place_chord(&[41, 48, 53, 57, 60, 65], Some(1.0)).unwrap();
+        let frets: Vec<i32> = shape.iter().map(|(_, fret)| *fret).collect();
+        assert_eq!(frets, [1, 3, 3, 2, 1, 1]);
+    }
+
+    #[test]
+    fn notes_no_hand_could_reach_have_no_shape() {
+        assert_eq!(place_chord(&[40, 41, 42, 43, 44, 45, 46], None), None);
+    }
+
+    #[test]
+    fn the_median_ignores_a_stray_reading() {
+        assert_eq!(median(&mut [3.0, 1.0, 900.0, 2.0, 2.5]), 2.5);
     }
 
     #[test]

@@ -23,6 +23,8 @@ use std::{f32::consts::PI, time::Instant};
 
 /// Enough audio to catch the lowest note the tuner looks for.
 const TUNER_FRAMES: usize = 6_000;
+/// The longer stretch kept for picking out chords and reading strings.
+const LISTEN_FRAMES: usize = 16_384;
 const IN_TUNE_CENTS: f32 = 3.0;
 const SCALE_CENTS: f32 = 50.0;
 /// How far the needle swings either side of straight up, in radians.
@@ -89,16 +91,28 @@ impl Rig {
     pub(super) fn read_tuner(&mut self) {
         if let Some(engine) = &mut self.engine {
             engine.read_tuner(&mut self.tuner_samples);
-            let extra = self.tuner_samples.len().saturating_sub(TUNER_FRAMES);
+            let extra = self.tuner_samples.len().saturating_sub(LISTEN_FRAMES);
             self.tuner_samples.drain(..extra);
+            let recent = self.tuner_samples.len().saturating_sub(TUNER_FRAMES);
+            let heard = detect_pitch(&self.tuner_samples[recent..], ENGINE_RATE);
             // Hold the last reading through a gap, so the needle doesn't flicker
             // as a note decays.
-            if let Some(pitch) = detect_pitch(&self.tuner_samples, ENGINE_RATE) {
-                self.pitch = Some(pitch);
-                self.fretboard.play(pitch.hertz, self.smoke_phase);
+            if heard.is_some() {
+                self.pitch = heard;
+            }
+            let (strings, learned) = self.string_stiffness();
+            let finished = self.fretboard.hearing.hear(
+                &self.tuner_samples,
+                heard,
+                self.smoke_phase,
+                &strings,
+                learned,
+            );
+            if finished.is_some() {
+                self.settings.string_stiffness = finished;
+                self.settings_save_at = Some(self.smoke_phase);
             }
         }
-        self.fretboard.fade(self.smoke_phase);
         let target = self.pitch.map_or(0.0, |pitch| pitch.cents);
         self.needle += (target - self.needle) * NEEDLE_EASE;
     }
