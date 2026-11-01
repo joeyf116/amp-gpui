@@ -13,6 +13,10 @@ pub struct Settings {
     pub library: Option<PathBuf>,
     /// The tone to reopen, by name, so the app starts ready to play.
     pub last_tone: Option<String>,
+    /// Set to use the Windows mixer, so other apps keep playing while
+    /// monitoring, at the cost of much higher latency.
+    #[serde(default)]
+    pub shared_audio: bool,
 }
 
 /// `AMP_GPUI_DATA` points the app at another folder, which keeps test runs away

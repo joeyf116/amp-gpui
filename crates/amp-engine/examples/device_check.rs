@@ -5,7 +5,7 @@
 //! cargo run -p amp-engine --example device_check -- --run --input "Mic 1" --output "USB Out 1/2"
 
 use amp_dsp::{Block, Chain};
-use amp_engine::{DeviceList, DeviceOption, Engine, EngineConfig};
+use amp_engine::{DeviceList, DeviceOption, Engine, EngineConfig, LatencyMode};
 use std::time::Duration;
 
 struct Mute;
@@ -50,6 +50,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             input: pick(&devices.inputs, "--input"),
             output: pick(&devices.outputs, "--output"),
             input_channel: 0,
+            mode: if std::env::args().any(|argument| argument == "--exclusive") {
+                LatencyMode::Exclusive
+            } else {
+                LatencyMode::Shared
+            },
         };
         let engine = Engine::start(Box::new(chain), &config)?;
         let info = engine.info();

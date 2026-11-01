@@ -14,8 +14,11 @@ const ENGINE_BLOCK: usize = 64;
 /// Input frames to keep queued. The two devices wake on separate clocks, so
 /// an interface feeding the built-in speakers needs some cushion, and any more
 /// than necessary is heard as delay. It starts low and grows only on underrun.
-const START_TARGET: f32 = 240.0;
+pub(crate) const START_TARGET: usize = 240;
 const TARGET_STEP: f32 = 48.0;
+/// A burst of underruns comes from one hiccup, so the queue grows at most once
+/// in this many seconds. Otherwise a single stall buys a lot of lasting delay.
+const TARGET_HOLD_SECONDS: f32 = 0.1;
 const MAX_TARGET: f32 = 4_800.0;
 
 /// How hard to lean on the input rate to pull the queue back to target: 0.5%
@@ -43,6 +46,11 @@ pub(crate) struct Pump {
     position: usize,
     target: f32,
     average: f32,
+    /// False until the first input arrives. The output device usually starts
+    /// first, and running dry then says nothing about the queue being too small.
+    input_started: bool,
+    frames_since_growth: usize,
+    hold_frames: usize,
 }
 
 impl Pump {
@@ -52,6 +60,7 @@ impl Pump {
         meters: Arc<Meters>,
         input_rate: u32,
         output_rate: u32,
+        start_target: usize,
     ) -> Self {
         Self {
             input,
@@ -63,13 +72,12 @@ impl Pump {
             output_ratio: ENGINE_RATE as f32 / output_rate as f32,
             block: [0.0; ENGINE_BLOCK],
             position: ENGINE_BLOCK,
-            target: START_TARGET,
-            average: START_TARGET,
+            target: start_target as f32,
+            average: start_target as f32,
+            input_started: false,
+            frames_since_growth: 0,
+            hold_frames: (output_rate as f32 * TARGET_HOLD_SECONDS) as usize,
         }
-    }
-
-    pub(crate) fn start_frames() -> usize {
-        START_TARGET as usize
     }
 
     /// Frames currently held back, for the latency readout.
@@ -79,6 +87,8 @@ impl Pump {
 
     pub(crate) fn render(&mut self, output: &mut [f32]) {
         let backlog = self.input.slots() as f32;
+        self.input_started |= backlog > 0.0;
+        self.frames_since_growth += output.len();
         self.average += (backlog - self.average) * AVERAGING;
 
         // Too far behind to catch up smoothly, for example after the machine
@@ -122,9 +132,12 @@ impl Pump {
             sample
         });
 
-        if starved {
-            self.target = (self.target + TARGET_STEP).min(MAX_TARGET);
+        if starved && self.input_started {
             self.meters.add_xrun();
+            if self.frames_since_growth >= self.hold_frames {
+                self.target = (self.target + TARGET_STEP).min(MAX_TARGET);
+                self.frames_since_growth = 0;
+            }
         }
     }
 }
@@ -144,12 +157,19 @@ mod tests {
 
     fn rig(input_rate: u32, output_rate: u32) -> Rig {
         let (mut tx, rx) = RingBuffer::new(32_768);
-        for _ in 0..Pump::start_frames() {
+        for _ in 0..START_TARGET {
             tx.push(0.0).unwrap();
         }
         let (processor, controller) = processor(Box::default());
         let meters = controller.meters.clone();
-        let pump = Pump::new(rx, processor, meters.clone(), input_rate, output_rate);
+        let pump = Pump::new(
+            rx,
+            processor,
+            meters.clone(),
+            input_rate,
+            output_rate,
+            START_TARGET,
+        );
         std::mem::forget(controller);
         Rig {
             pump,
@@ -220,6 +240,36 @@ mod tests {
             rig.run(60, actual, 48_000);
             assert_eq!(rig.meters.xruns(), settled, "still glitching at {actual}");
         }
+    }
+
+    #[test]
+    fn waiting_for_the_input_to_start_is_not_a_glitch() {
+        let mut rig = rig(48_000, 48_000);
+        while rig.pump.input.pop().is_ok() {}
+        rig.pump.average = 0.0;
+        let mut period = vec![0.0; 144];
+        for _ in 0..100 {
+            rig.pump.render(&mut period);
+        }
+        assert_eq!(rig.meters.xruns(), 0);
+        assert_eq!(rig.pump.target, START_TARGET as f32);
+    }
+
+    #[test]
+    fn a_burst_of_underruns_grows_the_queue_once() {
+        let mut rig = rig(48_000, 48_000);
+        rig.input.push(0.0).unwrap();
+        let mut period = vec![0.0; 6_000];
+        rig.pump.render(&mut period);
+        let grown = rig.pump.target;
+        assert_eq!(grown, START_TARGET as f32 + TARGET_STEP);
+
+        let mut short = vec![0.0; 144];
+        for _ in 0..10 {
+            rig.pump.render(&mut short);
+        }
+        assert_eq!(rig.pump.target, grown);
+        assert!(rig.meters.xruns() > 1);
     }
 
     #[test]

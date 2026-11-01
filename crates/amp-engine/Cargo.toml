@@ -1,4 +1,4 @@
-﻿[package]
+[package]
 name = "amp-engine"
 description = "Connects the signal chain to audio devices and the UI thread"
 version.workspace = true
@@ -10,3 +10,6 @@ amp-dsp.workspace = true
 cpal.workspace = true
 rtrb.workspace = true
 thiserror.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows.workspace = true

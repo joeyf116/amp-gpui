@@ -72,4 +72,6 @@ Sheets are JSON files in the library's `practice` folder.
 
 ## Status
 
-Latency is the main open problem. See the architecture notes for the plan.
+Monitoring defaults to WASAPI exclusive mode, which reports about 17 ms on a
+FLOW 8 and takes over the devices while it runs. **Shared audio** in the device
+bar keeps other apps playing, at about 40 ms or more. ASIO is the next step.

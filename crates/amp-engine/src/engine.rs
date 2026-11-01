@@ -1,4 +1,7 @@
-use crate::{Command, Controller, Meters, processor, pump::Pump};
+use crate::{
+    Command, Controller, Meters, processor,
+    pump::{Pump, START_TARGET},
+};
 use amp_dsp::Chain;
 use cpal::{
     BufferSize, Device, DeviceId, Host, SampleFormat, SampleRate, Stream, StreamConfig,
@@ -26,6 +29,21 @@ pub enum EngineError {
     Device(#[from] cpal::Error),
     #[error("the {0} device uses {1} samples, and only 32-bit float is supported so far")]
     UnsupportedFormat(&'static str, SampleFormat),
+    #[cfg(windows)]
+    #[error("exclusive mode failed: {0}")]
+    Exclusive(#[from] crate::exclusive::ExclusiveError),
+}
+
+/// How the devices are opened.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub enum LatencyMode {
+    /// Shares the devices with other apps through the Windows mixer.
+    #[default]
+    Shared,
+    /// Takes the devices over, which cuts latency and silences other apps on
+    /// them while monitoring runs.
+    #[cfg(windows)]
+    Exclusive,
 }
 
 /// An audio device someone can pick.
@@ -46,6 +64,23 @@ pub struct DeviceList {
 }
 
 impl DeviceList {
+    /// The names of the devices config points at, for showing to the user.
+    #[cfg(windows)]
+    fn names(config: &EngineConfig) -> (String, String) {
+        let devices = Self::scan().unwrap_or_default();
+        let name = |options: &[DeviceOption], id: &Option<String>, default: &Option<String>| {
+            let id = id.as_ref().or(default.as_ref());
+            options
+                .iter()
+                .find(|device| Some(&device.id) == id)
+                .map_or_else(|| "Unknown device".to_owned(), |device| device.name.clone())
+        };
+        (
+            name(&devices.inputs, &config.input, &devices.default_input),
+            name(&devices.outputs, &config.output, &devices.default_output),
+        )
+    }
+
     pub fn scan() -> Result<Self, EngineError> {
         let host = cpal::default_host();
         let option = |device: Device, config: Result<SupportedStreamConfig, cpal::Error>| {
@@ -86,6 +121,7 @@ pub struct EngineConfig {
     pub output: Option<String>,
     /// The zero-based input channel the guitar is plugged into.
     pub input_channel: usize,
+    pub mode: LatencyMode,
 }
 
 /// What the running streams settled on.
@@ -95,14 +131,27 @@ pub struct EngineInfo {
     pub output_name: String,
     pub input_rate: SampleRate,
     pub output_rate: SampleRate,
+    pub mode: LatencyMode,
 }
 
 /// Live monitoring. Dropping this stops the streams.
 pub struct Engine {
     controller: Controller,
     info: EngineInfo,
-    _input: Stream,
-    _output: Stream,
+    _streams: Streams,
+}
+
+// Only one exists per engine, so the size difference costs nothing.
+#[allow(clippy::large_enum_variant)]
+enum Streams {
+    Shared {
+        _input: Stream,
+        _output: Stream,
+    },
+    #[cfg(windows)]
+    Exclusive {
+        _streams: crate::exclusive::ExclusiveStreams,
+    },
 }
 
 fn find_device(host: &Host, id: Option<&str>, input: bool) -> Result<Device, EngineError> {
@@ -139,6 +188,54 @@ impl Engine {
     /// Opens the devices and starts processing `chain`, which must have been
     /// built for [`ENGINE_RATE`](crate::ENGINE_RATE).
     pub fn start(chain: Box<Chain>, config: &EngineConfig) -> Result<Self, EngineError> {
+        match config.mode {
+            LatencyMode::Shared => Self::start_shared(chain, config),
+            #[cfg(windows)]
+            LatencyMode::Exclusive => Self::start_exclusive(chain, config),
+        }
+    }
+
+    #[cfg(windows)]
+    fn start_exclusive(chain: Box<Chain>, config: &EngineConfig) -> Result<Self, EngineError> {
+        let (processor, controller) = processor(chain);
+        let meters = controller.meters.clone();
+        let (queue_tx, queue_rx) = RingBuffer::<f32>::new(QUEUE_FRAMES);
+        let pump_meters = meters.clone();
+        let (streams, input, output) = crate::exclusive::start(
+            config.input.clone(),
+            config.output.clone(),
+            config.input_channel,
+            queue_tx,
+            meters.clone(),
+            move |input, output| {
+                // One device period is the least that can keep the output fed.
+                Pump::new(
+                    queue_rx,
+                    processor,
+                    pump_meters,
+                    input.rate,
+                    output.rate,
+                    input.period_frames,
+                )
+            },
+        )?;
+        meters.set_input_device_latency(input.latency);
+        meters.set_output_device_latency(output.latency);
+        let (input_name, output_name) = DeviceList::names(config);
+        Ok(Self {
+            controller,
+            info: EngineInfo {
+                input_name,
+                output_name,
+                input_rate: input.rate,
+                output_rate: output.rate,
+                mode: LatencyMode::Exclusive,
+            },
+            _streams: Streams::Exclusive { _streams: streams },
+        })
+    }
+
+    fn start_shared(chain: Box<Chain>, config: &EngineConfig) -> Result<Self, EngineError> {
         let host = cpal::default_host();
         let input_device = find_device(&host, config.input.as_deref(), true)?;
         let output_device = find_device(&host, config.output.as_deref(), false)?;
@@ -163,6 +260,7 @@ impl Engine {
             output_name: output_device.description()?.name().to_owned(),
             input_rate: input_config.sample_rate(),
             output_rate: output_config.sample_rate(),
+            mode: LatencyMode::Shared,
         };
         let input_channels = usize::from(input_config.channels()).max(1);
         let output_channels = usize::from(output_config.channels()).max(1);
@@ -171,7 +269,7 @@ impl Engine {
         let (processor, controller) = processor(chain);
         let meters = controller.meters.clone();
         let (mut queue_tx, queue_rx) = RingBuffer::<f32>::new(QUEUE_FRAMES);
-        for _ in 0..Pump::start_frames() {
+        for _ in 0..START_TARGET {
             let _ = queue_tx.push(0.0);
         }
         let mut pump = Pump::new(
@@ -180,6 +278,7 @@ impl Engine {
             meters.clone(),
             info.input_rate,
             info.output_rate,
+            START_TARGET,
         );
 
         let input_meters = meters.clone();
@@ -229,8 +328,10 @@ impl Engine {
         Ok(Self {
             controller,
             info,
-            _input: input,
-            _output: output,
+            _streams: Streams::Shared {
+                _input: input,
+                _output: output,
+            },
         })
     }
 

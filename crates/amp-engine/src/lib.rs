@@ -7,10 +7,14 @@
 //! device streams.
 
 mod engine;
+#[cfg(windows)]
+mod exclusive;
 mod processor;
 mod pump;
 mod resampler;
 
-pub use engine::{DeviceList, DeviceOption, Engine, EngineConfig, EngineError, EngineInfo};
+pub use engine::{
+    DeviceList, DeviceOption, Engine, EngineConfig, EngineError, EngineInfo, LatencyMode,
+};
 pub use processor::{Command, Controller, Latency, Meters, Processor, processor};
 pub use pump::ENGINE_RATE;

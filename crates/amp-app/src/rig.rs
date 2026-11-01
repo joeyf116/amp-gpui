@@ -5,7 +5,9 @@ use crate::{
     settings::Settings,
 };
 use amp_dsp::{AmpInfo, BlockKind};
-use amp_engine::{Command, DeviceList, DeviceOption, ENGINE_RATE, Engine, EngineConfig, Latency};
+use amp_engine::{
+    Command, DeviceList, DeviceOption, ENGINE_RATE, Engine, EngineConfig, Latency, LatencyMode,
+};
 use amp_preset::{AssetKind, Library, Preset, PresetEntry, build_chain};
 use gpui_kit::{
     component::{
@@ -267,11 +269,12 @@ impl Rig {
         cx.notify();
     }
 
-    fn engine_config(&self) -> EngineConfig {
+    fn engine_config(&self, mode: LatencyMode) -> EngineConfig {
         EngineConfig {
             input: self.settings.input.clone(),
             output: self.settings.output.clone(),
             input_channel: self.settings.input_channel,
+            mode,
         }
     }
 
@@ -281,11 +284,39 @@ impl Rig {
             Ok(built) => built,
             Err(error) => return self.set_error(error, cx),
         };
-        match Engine::start(Box::new(built.chain), &self.engine_config()) {
+        if !self.settings.shared_audio {
+            let config = self.engine_config(LatencyMode::Exclusive);
+            match Engine::start(Box::new(built.chain), &config) {
+                Ok(engine) => {
+                    self.engine = Some(engine);
+                    return cx.notify();
+                }
+                // Something else may hold the device, and playing with more
+                // latency beats not playing. The chain went with the failed
+                // start, so build another.
+                Err(error) => self.error = Some(format!("{error}. Using shared audio.").into()),
+            }
+        } else {
+            return self.start_shared(built.chain, cx);
+        }
+        match build_chain(&self.preset, &self.library, ENGINE_RATE) {
+            Ok(built) => self.start_shared(built.chain, cx),
+            Err(error) => self.set_error(error, cx),
+        }
+    }
+
+    fn start_shared(&mut self, chain: amp_dsp::Chain, cx: &mut Context<Self>) {
+        let config = self.engine_config(LatencyMode::Shared);
+        match Engine::start(Box::new(chain), &config) {
             Ok(engine) => self.engine = Some(engine),
             Err(error) => self.set_error(error, cx),
         }
         cx.notify();
+    }
+
+    fn toggle_shared_audio(&mut self, cx: &mut Context<Self>) {
+        self.settings.shared_audio = !self.settings.shared_audio;
+        self.devices_changed(cx);
     }
 
     fn toggle_monitoring(&mut self, cx: &mut Context<Self>) {
@@ -547,6 +578,17 @@ impl Rig {
                     .when(live, |button| button.danger())
                     .on_click(cx.listener(|this, _, _, cx| this.toggle_monitoring(cx))),
             )
+            .child(
+                Button::new("latency-mode")
+                    .outline()
+                    .tooltip("Low latency takes over your audio devices, so other apps go silent on them while monitoring")
+                    .label(if self.settings.shared_audio {
+                        "Shared audio"
+                    } else {
+                        "Low latency"
+                    })
+                    .on_click(cx.listener(|this, _, _, cx| this.toggle_shared_audio(cx))),
+            )
             .child(div().flex_1())
             .child(
                 v_flex()
@@ -559,8 +601,14 @@ impl Rig {
                                 .text_xs()
                                 .text_color(cx.theme().muted_foreground)
                                 .child(format!(
-                                    "{:.0} ms latency, {} glitches",
+                                    "{:.0} ms latency ({}), {} glitches",
                                     self.latency.total_ms(),
+                                    self.engine.as_ref().map_or("off", |engine| {
+                                        match engine.info().mode {
+                                            LatencyMode::Exclusive => "exclusive",
+                                            LatencyMode::Shared => "shared",
+                                        }
+                                    }),
                                     self.glitches
                                 )),
                         )
