@@ -1,5 +1,6 @@
-use crate::{BlockPreset, Library, LibraryError, Preset, SCHEMA_VERSION};
+use crate::{BlockPreset, Library, LibraryError, Preset, SCHEMA_VERSION, library::write_json};
 use amp_dsp::BlockKind;
+use std::{fs, io::ErrorKind};
 
 fn block(kind: BlockKind, enabled: bool, params: &[(&str, f32)]) -> BlockPreset {
     let mut block = BlockPreset::new(kind, enabled);
@@ -243,20 +244,255 @@ pub fn factory_tones() -> Vec<Preset> {
                 ),
             ],
         ),
+        tone(
+            "Silver Hollow",
+            &["clean", "blues"],
+            "A glassy, round clean with light compression and a plate-style reverb.",
+            vec![
+                block(
+                    Compressor,
+                    true,
+                    &[
+                        ("threshold", -26.0),
+                        ("ratio", 2.5),
+                        ("release", 220.0),
+                        ("level", 3.0),
+                    ],
+                ),
+                amp(&[
+                    ("gain", 2.6),
+                    ("bass", 5.5),
+                    ("mid", 4.4),
+                    ("treble", 6.4),
+                    ("presence", 4.5),
+                    ("master", 5.5),
+                ]),
+                cab(0.0),
+                block(
+                    Reverb,
+                    true,
+                    &[("size", 50.0), ("damping", 30.0), ("mix", 20.0)],
+                ),
+            ],
+        ),
+        tone(
+            "Slow Thaw",
+            &["blues", "edge of breakup"],
+            "Warm edge of breakup, with a light drive left on as a gentle push.",
+            vec![
+                block(
+                    Compressor,
+                    true,
+                    &[
+                        ("threshold", -24.0),
+                        ("ratio", 2.0),
+                        ("release", 240.0),
+                        ("level", 2.0),
+                    ],
+                ),
+                block(Drive, true, &[("drive", 6.0), ("level", -1.0)]),
+                amp(&[
+                    ("gain", 3.6),
+                    ("bass", 5.2),
+                    ("mid", 5.4),
+                    ("treble", 5.8),
+                    ("presence", 3.5),
+                    ("master", 3.3),
+                ]),
+                cab(0.0),
+                block(
+                    Delay,
+                    true,
+                    &[("time", 300.0), ("feedback", 15.0), ("mix", 10.0)],
+                ),
+                block(
+                    Reverb,
+                    true,
+                    &[("size", 45.0), ("damping", 40.0), ("mix", 18.0)],
+                ),
+            ],
+        ),
+        tone(
+            "Amber Lead",
+            &["blues", "lead"],
+            "A vocal lead with a mid push, for long bends over a soft delay.",
+            vec![
+                block(
+                    Compressor,
+                    true,
+                    &[("threshold", -24.0), ("ratio", 2.5), ("level", 2.0)],
+                ),
+                block(Drive, true, &[("drive", 10.0), ("level", -3.0)]),
+                amp(&[
+                    ("gain", 5.0),
+                    ("bass", 4.8),
+                    ("mid", 6.2),
+                    ("treble", 5.6),
+                    ("presence", 3.5),
+                    ("master", 2.4),
+                ]),
+                cab(0.0),
+                block(
+                    Delay,
+                    true,
+                    &[("time", 380.0), ("feedback", 24.0), ("mix", 16.0)],
+                ),
+                block(
+                    Reverb,
+                    true,
+                    &[("size", 50.0), ("damping", 40.0), ("mix", 18.0)],
+                ),
+            ],
+        ),
+        tone(
+            "Sunlit Neo",
+            &["clean", "neo-soul"],
+            "A shimmering neo-soul clean for chord melodies and fills.",
+            vec![
+                block(
+                    Compressor,
+                    true,
+                    &[
+                        ("threshold", -30.0),
+                        ("ratio", 4.0),
+                        ("release", 180.0),
+                        ("level", 5.0),
+                    ],
+                ),
+                amp(&[
+                    ("gain", 1.4),
+                    ("bass", 4.6),
+                    ("mid", 4.2),
+                    ("treble", 6.6),
+                    ("presence", 4.5),
+                    ("master", 6.3),
+                ]),
+                cab(0.0),
+                block(
+                    Chorus,
+                    true,
+                    &[("rate", 0.9), ("depth", 30.0), ("mix", 28.0)],
+                ),
+                block(
+                    Delay,
+                    true,
+                    &[("time", 250.0), ("feedback", 18.0), ("mix", 12.0)],
+                ),
+                block(
+                    Reverb,
+                    true,
+                    &[("size", 60.0), ("damping", 30.0), ("mix", 24.0)],
+                ),
+            ],
+        ),
+        tone(
+            "Velvet Pocket",
+            &["clean", "neo-soul", "rhythm"],
+            "A tight, percussive clean for funky rhythm and double-stops.",
+            vec![
+                block(
+                    Compressor,
+                    true,
+                    &[
+                        ("threshold", -32.0),
+                        ("ratio", 5.0),
+                        ("release", 120.0),
+                        ("level", 6.0),
+                    ],
+                ),
+                amp(&[
+                    ("gain", 1.8),
+                    ("bass", 4.4),
+                    ("mid", 5.0),
+                    ("treble", 5.4),
+                    ("presence", 3.5),
+                    ("master", 6.0),
+                ]),
+                cab(0.0),
+                block(
+                    Reverb,
+                    true,
+                    &[("size", 30.0), ("damping", 45.0), ("mix", 12.0)],
+                ),
+            ],
+        ),
+        tone(
+            "Dew Line",
+            &["neo-soul", "lead"],
+            "A singing, airy lead with a light chorus and a lush tail.",
+            vec![
+                block(
+                    Compressor,
+                    true,
+                    &[("threshold", -28.0), ("ratio", 3.0), ("level", 3.0)],
+                ),
+                block(Drive, true, &[("drive", 8.0), ("level", -2.0)]),
+                amp(&[
+                    ("gain", 4.2),
+                    ("bass", 4.6),
+                    ("mid", 5.6),
+                    ("treble", 6.0),
+                    ("presence", 4.0),
+                    ("master", 3.2),
+                ]),
+                cab(0.0),
+                block(
+                    Chorus,
+                    true,
+                    &[("rate", 0.6), ("depth", 20.0), ("mix", 16.0)],
+                ),
+                block(
+                    Delay,
+                    true,
+                    &[("time", 430.0), ("feedback", 26.0), ("mix", 18.0)],
+                ),
+                block(
+                    Reverb,
+                    true,
+                    &[("size", 60.0), ("damping", 35.0), ("mix", 26.0)],
+                ),
+            ],
+        ),
     ]
 }
 
+/// Remembers which factory tones a library has been given, so a tone added in a
+/// later version arrives once, and one the user removed stays gone.
+const SEEDED: &str = "factory.json";
+
 impl Library {
-    /// Gives a library with no tones the factory set. A library someone has
-    /// already put tones in is left exactly as it is.
+    /// Gives a new library the factory set, and an existing factory library any
+    /// tones added since. A library of someone's own tones is left as it is.
     pub fn seed_factory_tones(&self) -> Result<(), LibraryError> {
         let (entries, errors) = self.presets()?;
-        if entries.is_empty() && errors.is_empty() {
-            for tone in factory_tones() {
-                self.save_preset(&tone)?;
+        if !errors.is_empty() {
+            return Ok(());
+        }
+        let tones = factory_tones();
+        let path = self.root().join(SEEDED);
+        let existing = |name: &str| entries.iter().any(|entry| entry.preset.name == name);
+        let mut seeded: Vec<String> = match fs::read_to_string(&path) {
+            Ok(text) => serde_json::from_str(&text).map_err(|source| LibraryError::Json {
+                path: path.clone(),
+                source,
+            })?,
+            Err(error) if error.kind() == ErrorKind::NotFound => {
+                if !entries.is_empty() && !tones.iter().any(|tone| existing(&tone.name)) {
+                    return Ok(());
+                }
+                Vec::new()
+            }
+            Err(error) => return Err(error.into()),
+        };
+        for tone in tones {
+            if !seeded.contains(&tone.name) {
+                if !existing(&tone.name) {
+                    self.save_preset(&tone)?;
+                }
+                seeded.push(tone.name);
             }
         }
-        Ok(())
+        write_json(&path, &seeded)
     }
 }
 
@@ -355,6 +591,23 @@ mod tests {
         library.seed_factory_tones().unwrap();
         assert_eq!(library.presets().unwrap().0.len(), factory_tones().len());
         std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn a_factory_library_gets_new_tones_once() {
+        let directory = std::env::temp_dir().join(format!("amp-seed-new-{}", std::process::id()));
+        let library = Library::open(&directory).unwrap();
+        library.save_preset(&factory_tones()[0]).unwrap();
+
+        library.seed_factory_tones().unwrap();
+        let count = library.presets().unwrap().0.len();
+        assert_eq!(count, factory_tones().len());
+
+        let removed = directory.join("presets").join("silver-hollow.json");
+        fs::remove_file(removed).unwrap();
+        library.seed_factory_tones().unwrap();
+        assert_eq!(library.presets().unwrap().0.len(), count - 1);
+        fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]
