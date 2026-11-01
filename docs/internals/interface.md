@@ -10,8 +10,10 @@ The window has four bands, and the code for each lives under
 | Stage | The selected unit up close, its details, and the gear drawer | `board.rs` |
 | Footer | Audio status, Audio setup, tempo, and Practice tools | `audio.rs` |
 
-The Tone Explorer (`explorer.rs`), the TONE3000 panel (`tone3000.rs`), and Audio
-setup (`audio.rs`) open over the stage.
+Keys are in `keys.rs`, and loading, saving, and undo are in `tones.rs`. The tone
+assistant (`assistant.rs`, drawn by `assistant_view.rs`) docks to the right of all of
+this, so it stays open beside any panel. The Tone Explorer (`explorer.rs`), the TONE3000
+panel (`tone3000.rs`), and Audio setup (`audio.rs`) open over the stage.
 Which one is open is held in `Overlay`, and ++esc++ closes it. Monitor stays in the
 header because live playing is what the app is for. Devices fold away because they
 are set once.
@@ -45,17 +47,58 @@ carries them to this site.
 
 ## The Tone Explorer
 
-The Explorer follows common filter practice: search first, multi-select filters in
-named groups, applied filters kept in view as removable chips, and a count beside each
-option that shows what pressing it would leave. Within a group, any tag matches. Across
-groups, every group has to match.
+The list is short, so the Explorer leaves out what a large shop needs. An earlier version
+had a filter sidebar, per-option counts, and a row of applied chips, and most of that
+explained itself rather than helping anyone find a tone. Now each row of pills picks one
+thing. A lit pill is the applied filter, so there's no AND or OR to learn. Options that
+would leave nothing are hidden, and rarer filters fold behind **More**.
 
-`visible` does the filtering and has tests of its own. Tags sort into groups by
-`group_of`: known gain words are **Character**, `rhythm` and `lead` are **Role**, and
-anything else is **Style**, so a tag from a shared tone still has a place. Tones list
-in one line each with fixed columns, so the eye can run down them, and the longer
-notes moved to the detail panel. Favorites and recent tones are stored by name in
-`settings.json`, not in the tone files, so sharing a tone doesn't share your favorites.
+`visible` does the filtering and has tests of its own, and `choose` keeps one pick per
+group. Tags sort into groups by `group_of`: known gain words are the gain row, `rhythm`
+and `lead` are roles, and anything else is a style, so a tag from a shared tone still has
+a place. Favorites and recent tones are stored by name in `settings.json`, not in the
+tone files, so sharing a tone doesn't share your favorites.
+
+## The tone assistant
+
+`crates/amp-assistant` holds everything but the UI, so its tests need no window. Rust
+has no official Anthropic SDK, so `api.rs` speaks the Messages API over HTTP and parses
+the event stream itself. `AMP_GPUI_ANTHROPIC` points it at a test server, and only a
+loopback address counts, so a stray variable can't send the key elsewhere.
+
+A turn runs on its own thread. It gets a `Snapshot` of the rig, so it shares nothing with
+the UI thread, and reports through a channel that the meter tick drains. That's why Stop
+works at once whatever the network is doing: the UI stops listening, and the thread's
+later events go nowhere.
+
+Claude's blocks are kept exactly as they arrive and sent back unchanged, because thinking
+blocks are only valid that way. Regenerate and Edit cut the end off, which leaves the rest
+untouched. Saved chats keep only words and suggestions, which is why a reopened chat
+restarts from plain text.
+
+The rules that keep it safe, which should stay true when you change it:
+
+- **Tools don't touch the rig.** Reading tools run freely. `suggest_tone` only produces a
+  `Proposal`, checked by `build_proposal`, and a bad value goes back to Claude as a tool
+  error.
+- **Downloads follow a press.** `try_proposal` does the downloading, because TONE3000's
+  terms allow downloads only when a user asks. The assistant reads only the free tier's
+  bounded lists and never calls search, and anything else goes through the Select flow.
+- **Text from tones is data.** `remember` is limited to what the player said, and it shows
+  in the chat, because tone descriptions are written by strangers.
+- **Levels are measured.** `amp_preset::loudness` runs a test chord through the chain, and
+  `trim_to` turns the cab or capture output down if it's over 2 dB louder than what was
+  playing. It never turns anything up.
+- **The block reference is generated.** `prompt.rs` builds it from `BlockKind::params`, so
+  a new block or param reaches Claude by itself, once it has a note in `BLOCK_NOTES`.
+
+`taste.rs` holds what's been learned. Adjustments are measured against the tone as it went
+on the rig, after any trim, so only the player's own moves count, as a share of each
+knob's range. A move has to repeat before it becomes a habit Claude hears about.
+
+The prompt's long first block stays byte for byte the same, so it can be cached. Taste and
+the rig come after it. Requests use Claude Opus 5.5 unless the player picks another model,
+at medium effort, with server-side fallback on the models that support it.
 
 ## Practice tools
 
@@ -91,7 +134,8 @@ OAuth with PKCE in the system browser, returning to a listener on
 `http://127.0.0.1:53710/callback`. The app holds only the publishable key. The secret
 key is for servers and must never enter this repo. Tokens are sealed with DPAPI in
 `tone3000.tokens` beside `settings.json`. Refresh tokens rotate, so each new pair is
-saved at once. `AMP_GPUI_TONE3000` points the client at a test server.
+saved at once. `AMP_GPUI_TONE3000` points the client at a test server. `amp-secret`
+does the sealing, and the assistant's API key uses it too.
 
 Keep to these rules when changing it, because access can be revoked without them:
 

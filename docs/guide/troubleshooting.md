@@ -67,6 +67,27 @@ The capture isn't 48 kHz, and it needs to be. See
 The tone refers to a capture or impulse response that isn't in this library. Ask
 for a [tone pack](sharing.md#share-one-tone-tone-packs), which includes the files.
 
+## The assistant says the API key wasn't accepted
+
+The key was mistyped or revoked. In the assistant's **Settings**, press **Remove key**
+and paste a new one from the [Claude Console](https://platform.claude.com/settings/keys).
+If it says the key is out of credit, add credit there.
+
+## The assistant can't find a capture I know is on TONE3000
+
+It can't search their catalog. Press **Browse TONE3000** when it offers, or ask it to
+open the picker, and choose the tone yourself. It'll carry on from your pick.
+
+## It says it's using a temporary library
+
+The library folder you chose can't be opened, usually because its drive isn't there.
+Reconnect it, or choose another with **Library** in the Tone Explorer.
+
+## The app crashed
+
+Details go to `crash.log` in `%APPDATA%\amp-gpui\data`, beside your settings. Attach
+that file if you report it.
+
 ## It sounds like there are two cabinets
 
 Your capture already includes one. Remove the **Cabinet** from the board.

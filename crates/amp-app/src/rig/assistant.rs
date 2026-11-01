@@ -53,7 +53,8 @@ pub(super) struct Trial {
     pub(super) at: (usize, usize),
     before: Preset,
     after: Preset,
-    /// The blocks as suggested, to see how the player adjusts them.
+    /// The blocks as they went on, after any trim, to see what the player
+    /// changes by hand.
     suggested: Vec<BlockPreset>,
     tags: Vec<String>,
     pub(super) hearing_after: bool,
@@ -670,7 +671,7 @@ impl Rig {
             at,
             before,
             after: after.clone(),
-            suggested: proposal.preset.blocks.clone(),
+            suggested: after.blocks.clone(),
             tags: proposal.preset.tags.clone(),
             hearing_after: true,
             trimmed,

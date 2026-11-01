@@ -1,6 +1,6 @@
 # How it works
 
-Amp GPUI is a Rust workspace of four crates. Each page in this section takes one
+Amp GPUI is a Rust workspace of seven crates. Each page in this section takes one
 part of the system and explains how it works and why it's built that way.
 
 ## The crates
@@ -10,6 +10,9 @@ part of the system and explains how it works and why it's built that way.
 | `amp-dsp` | The blocks and the chain: amp, cabinet, drives, effects, tuner | Audio thread |
 | `amp-engine` | Devices, resampling, clock drift, and messaging between the UI and audio threads | Audio thread and UI thread |
 | `amp-preset` | Preset format, tone library, tone packs, factory tones | Background threads |
+| `amp-tone3000` | TONE3000 sign-in, tone lists, downloads | Background threads |
+| `amp-assistant` | The tone assistant: Claude client, tools, chats, taste | Its own thread |
+| `amp-secret` | Small files encrypted to the Windows account | Background threads |
 | `amp-app` | The GPUI interface | UI thread |
 
 Dependencies run in one direction. `amp-preset` and `amp-engine` both build on
@@ -19,8 +22,13 @@ Dependencies run in one direction. `amp-preset` and `amp-engine` both build on
 flowchart LR
     app[amp-app] --> engine[amp-engine]
     app --> preset[amp-preset]
+    app --> assistant[amp-assistant]
     engine --> dsp[amp-dsp]
     preset --> dsp
+    assistant --> preset
+    assistant --> tone3000[amp-tone3000]
+    assistant --> secret[amp-secret]
+    tone3000 --> secret
 ```
 
 `amp-dsp` knows nothing about devices or the UI. `amp-engine` has no idea what a
