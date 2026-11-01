@@ -27,6 +27,7 @@ ArchitecturesInstallIn64BitMode=x64compatible
 MinVersion=10.0
 OutputBaseFilename=amp-gpui-setup
 LicenseFile=..\LICENSE
+SetupIconFile=..\crates\amp-app\assets\icon.ico
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern

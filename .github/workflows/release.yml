@@ -5,7 +5,8 @@ name: Release
 # the workspace version in Cargo.toml. A branch under release/ or a manual run
 # goes through the same build but publishes nothing, and keeps the installer as
 # a run artifact. So does a push to main that changes dependencies, which fills
-# the cache: a tag build can only read caches saved from main.
+# the cache: a tag build can only read caches saved from main. Tags ignore the
+# path filter.
 on:
   push:
     tags:
@@ -13,6 +14,10 @@ on:
     branches:
       - main
       - release/**
+    paths:
+      - Cargo.lock
+      - .github/workflows/release.yml
+      - packaging/**
   workflow_dispatch:
 
 permissions:
@@ -93,11 +98,21 @@ jobs:
           packaging/about.hbs
 
       - working-directory: ${{ env.DEV_DRIVE_WORKSPACE }}
-        run: iscc /DAppVersion=${{ steps.version.outputs.version }} /O..\dist packaging\amp-gpui.iss
+        run: |
+          iscc /DAppVersion=${{ steps.version.outputs.version }} /O..\dist packaging\amp-gpui.iss
+          iscc /DAppVersion=0.0.1 /O..\target\old-installer packaging\amp-gpui.iss
 
       - shell: bash
         working-directory: ${{ env.DEV_DRIVE_WORKSPACE }}/dist
         run: sha256sum amp-gpui-setup.exe > amp-gpui-setup.exe.sha256
+
+      - shell: pwsh
+        working-directory: ${{ env.DEV_DRIVE_WORKSPACE }}
+        run: >
+          packaging/test-installer.ps1
+          -Installer dist/amp-gpui-setup.exe
+          -OldInstaller target/old-installer/amp-gpui-setup.exe
+          -Version ${{ steps.version.outputs.version }}
 
       - uses: actions/upload-artifact@v5
         with:
