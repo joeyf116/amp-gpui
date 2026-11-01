@@ -1,0 +1,30 @@
+/* The app's look carried over to the docs: dark forest floor, moss-green
+   light, and very little else. The values come from crates/amp-app/src/style.rs. */
+
+:root,
+[data-md-color-scheme="default"] {
+  --md-primary-fg-color: #1f5c3d;
+  --md-primary-fg-color--light: #2d7a53;
+  --md-primary-fg-color--dark: #16442d;
+  --md-primary-bg-color: #f2f7f4;
+  --md-primary-bg-color--light: #f2f7f4b3;
+  --md-accent-fg-color: #2d7a53;
+  --md-accent-fg-color--transparent: #2d7a531a;
+  --md-accent-bg-color: #f2f7f4;
+  --md-accent-bg-color--light: #f2f7f4b3;
+}
+
+[data-md-color-scheme="slate"] {
+  --md-hue: 150;
+  --md-primary-fg-color: #101a15;
+  --md-primary-fg-color--light: #18261f;
+  --md-primary-fg-color--dark: #0a120e;
+  --md-primary-bg-color: #dfe9e3;
+  --md-primary-bg-color--light: #dfe9e3b3;
+  --md-accent-fg-color: #6fce9c;
+  --md-accent-fg-color--transparent: #6fce9c1a;
+  --md-accent-bg-color: #0a120e;
+  --md-accent-bg-color--light: #0a120eb3;
+  --md-default-bg-color: #0a120e;
+  --md-typeset-a-color: #6fce9c;
+}

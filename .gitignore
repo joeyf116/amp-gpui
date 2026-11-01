@@ -7,3 +7,7 @@
 # out of the repo. Tests build their own models in code.
 *.nam
 *.wav
+
+# Built docs site
+/site/
+/.cache/

@@ -1,0 +1,68 @@
+# Work on the code
+
+See [Install](../guide/install.md) for the tools you need. On Windows, build from
+PowerShell.
+
+## Common commands
+
+```bash
+cargo test --workspace
+```
+
+```bash
+cargo clippy --workspace --all-targets
+```
+
+```bash
+cargo run -p amp-app
+```
+
+Dev builds optimize `amp-dsp`, `nam-rs`, and `fft-convolver`, because neural
+inference is unusably slow without it, and anything that can underrun needs to be
+fast. The rest stays quick to compile.
+
+The tests need no captures or audio hardware. They build tiny models in code, and
+they drive the pump and processor directly. `.nam` and `.wav` files are ignored by
+git, since captures often have their own licenses.
+
+## Rules for audio code
+
+Everything reachable from `Chain::process` or `Pump::render` runs on the audio
+thread. There, code must not:
+
+- allocate or free memory
+- take a lock
+- block, sleep, or do any I/O
+
+Do that work when a block is built, on a background thread. If a block needs scratch
+space, size it to `MAX_BLOCK`.
+
+## Add a block
+
+1. Write a type that implements `Block` in `crates/amp-dsp/src`.
+2. Add a variant to `BlockKind`, with its `title` and `params`. Parameter ids are
+   stored in presets, so choose them carefully.
+3. Build it in `build_chain` (`crates/amp-preset/src/build.rs`).
+4. Add it to `BUILT_IN` (`crates/amp-app/src/rig/board.rs`) and give it art
+   (`crates/amp-app/src/art.rs`).
+
+## Keep gear art original
+
+Gear on the board is drawn in code. Keep it that way: no manufacturer photos, logos,
+or trade dress.
+
+## Work on these docs
+
+The site is built with [Zensical](https://zensical.org/), from the `docs` folder and
+`zensical.toml`.
+
+```bash
+pip install zensical==0.0.74
+```
+
+```bash
+zensical serve
+```
+
+Then open <http://localhost:8000/amp-gpui/>. Pushing changes to `main` publishes the
+site through `.github/workflows/docs.yml`.

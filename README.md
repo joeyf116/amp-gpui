@@ -9,6 +9,9 @@ Amps are [Neural Amp Modeler](https://www.neuralampmodeler.com/) captures
 folder you own and can share however you like. NAM A2 captures hold several
 model sizes, and the amp's Quality knob trades CPU for detail between them.
 
+The [documentation](https://joeyf116.github.io/amp-gpui/) has a user guide and
+explains how everything works. Its source is in `docs`.
+
 ## Run it
 
 ```bash

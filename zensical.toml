@@ -1,0 +1,84 @@
+[project]
+site_name = "Amp GPUI"
+site_description = "A desktop guitar amp and effects rig written in Rust, with Neural Amp Modeler captures and live monitoring."
+site_url = "https://joeyf116.github.io/amp-gpui/"
+repo_url = "https://github.com/joeyf116/amp-gpui"
+repo_name = "joeyf116/amp-gpui"
+edit_uri = "edit/main/docs/"
+extra_css = ["stylesheets/forest.css"]
+
+nav = [
+  { "Home" = "index.md" },
+  { "User guide" = [
+    "guide/index.md",
+    { "Install" = "guide/install.md" },
+    { "Connect your interface" = "guide/setup.md" },
+    { "Monitoring and latency" = "guide/monitoring.md" },
+    { "Load and save tones" = "guide/tones.md" },
+    { "Build a board" = "guide/board.md" },
+    { "Share tones" = "guide/sharing.md" },
+    { "Practice and tune" = "guide/practice.md" },
+    { "Keyboard and mouse" = "guide/controls.md" },
+    { "Troubleshooting" = "guide/troubleshooting.md" },
+  ] },
+  { "How it works" = [
+    "internals/index.md",
+    { "Audio path" = "internals/audio-path.md" },
+    { "Audio drivers" = "internals/drivers.md" },
+    { "Signal chain" = "internals/chain.md" },
+    { "Block reference" = "internals/blocks.md" },
+    { "Presets and the library" = "internals/presets.md" },
+    { "Work on the code" = "internals/contributing.md" },
+  ] },
+]
+
+[project.theme]
+language = "en"
+features = [
+  "content.action.edit",
+  "content.code.copy",
+  "content.tabs.link",
+  "navigation.footer",
+  "navigation.indexes",
+  "navigation.instant",
+  "navigation.path",
+  "navigation.sections",
+  "navigation.tabs",
+  "navigation.top",
+  "navigation.tracking",
+  "search.highlight",
+]
+
+[project.theme.icon]
+logo = "lucide/audio-waveform"
+
+# Dark comes first because the app itself is dark.
+[[project.theme.palette]]
+media = "(prefers-color-scheme: dark)"
+scheme = "slate"
+primary = "custom"
+accent = "custom"
+toggle.icon = "lucide/moon"
+toggle.name = "Switch to light mode"
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme: light)"
+scheme = "default"
+primary = "custom"
+accent = "custom"
+toggle.icon = "lucide/sun"
+toggle.name = "Switch to dark mode"
+
+[project.markdown_extensions]
+admonition = {}
+attr_list = {}
+md_in_html = {}
+toc.permalink = true
+pymdownx.details = {}
+pymdownx.highlight.pygments_lang_class = true
+pymdownx.inlinehilite = {}
+pymdownx.keys = {}
+pymdownx.superfences.custom_fences = [
+  { name = "mermaid", class = "mermaid", format = "pymdownx.superfences.fence_code_format" },
+]
+pymdownx.tabbed.alternate_style = true
