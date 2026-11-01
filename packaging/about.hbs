@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Amp GPUI third-party licenses</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 2rem auto; max-width: 56rem; padding: 0 1rem; }
+  pre { background: #f2f4f3; overflow-x: auto; padding: 1rem; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<h1>Third-party licenses</h1>
+<p>Amp GPUI is built on the open source crates listed here.</p>
+{{#each licenses}}
+<h2>{{name}}</h2>
+<ul>
+  {{#each used_by}}
+  <li>{{crate.name}} {{crate.version}}</li>
+  {{/each}}
+</ul>
+<pre>{{text}}</pre>
+{{/each}}
+</body>
+</html>
