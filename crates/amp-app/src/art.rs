@@ -127,6 +127,21 @@ impl PedalLook {
         }
     }
 
+    fn role(self) -> &'static str {
+        match self {
+            Self::Gate => "Noise gate",
+            Self::Compressor => "Compressor",
+            Self::Boost => "Boost",
+            Self::Overdrive => "Overdrive",
+            Self::Distortion => "Distortion",
+            Self::Fuzz => "Fuzz",
+            Self::Modulation => "Modulation",
+            Self::Delay => "Delay",
+            Self::Reverb => "Reverb",
+            Self::Capture => "Pedal",
+        }
+    }
+
     fn label(self) -> &'static str {
         match self {
             Self::Gate => "noise gate",
@@ -245,6 +260,16 @@ impl Shape {
         }
     }
 
+    /// What the unit does, in a word or two, so a block reads as "Overdrive"
+    /// or "Amp" before its own name.
+    pub fn role(&self) -> &'static str {
+        match self {
+            Self::Stomp(look) => look.role(),
+            Self::Head { .. } => "Amp",
+            Self::Cabinet { .. } => "Cabinet",
+        }
+    }
+
     pub fn type_label(&self) -> &'static str {
         match self {
             Self::Stomp(look) => look.label(),
@@ -333,6 +358,25 @@ pub fn thumb(art: &GearArt, enabled: bool) -> Div {
             |unit, lamp| unit.child(lamp),
         )
         .opacity(if enabled { 1.0 } else { 0.5 })
+}
+
+/// A unit's picture scaled to fit a box, keeping its shape, for cards where
+/// pedals, heads, and cabinets have to line up.
+pub fn thumb_fit(art: &GearArt, enabled: bool, room: (f32, f32)) -> Div {
+    let (width, height) = art.shape.thumb_size();
+    let scale = (room.0 / width).min(room.1 / height).min(1.0);
+    let lamp_scale = 0.5 * scale;
+    div()
+        .relative()
+        .w(px(width * scale))
+        .h(px(height * scale))
+        .flex_shrink_0()
+        .child(img(art.shape.picture(true)).size_full())
+        .when_some(
+            unit_lamp(&art.shape, lamp_scale).filter(|_| enabled),
+            |unit, lamp| unit.child(lamp),
+        )
+        .opacity(if enabled { 1.0 } else { 0.45 })
 }
 
 fn printed(text: SharedString, size: f32, ink: Hsla) -> Div {

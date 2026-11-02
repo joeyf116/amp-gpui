@@ -1,11 +1,23 @@
 # Build a rig
 
-![The Rig view, with the chain strip above a tube head on the stage](../assets/screens/rig.webp)
+![The Rig view, with the signal chain above a tube head on the stage](../assets/screens/rig.webp)
 
-The chain strip across the top of the window is your rig. It runs from your
-guitar on the left to your speakers on the right, and sound passes through the
-units in that order. Below it, the stage shows the selected unit up close, with
-its knobs. **Add gear** opens the gear drawer, which holds everything you can add.
+The **signal chain** across the top of the window is your rig, and the one place
+where you add, replace, remove, move, and switch blocks. It runs from your guitar
+on the left to your speakers on the right, and sound passes through the blocks in
+that order. Below it, the stage shows the selected block up close, with its knobs.
+
+Every block is a card that says what it is before anything else:
+
+- **Its number**, counted from the guitar, so "block 3" always means the same one.
+- **What it does**, such as OVERDRIVE, AMP, or CABINET, above its own name. Gear
+  has original names like Cinder or Deadfall 412, and the type keeps them clear.
+- **Its picture and name**, which is the capture's own name for your captures.
+- **Its switch**: **On**, **Off**, or **File missing**. Click it to switch the block.
+
+The selected card is lit in green, and the stage and the panel beside it repeat
+its number, type, and name, so the knobs always say whose they are. Hover over a
+card for a reminder of what it is.
 
 ![Generated gear art: stompboxes, a tube head, and two 4x12 cabinets](../assets/screens/gear.webp)
 
@@ -13,16 +25,30 @@ Pedals share one muted finish, and each type has its own printed graphic. When a
 tone comes with its own picture, such as one from TONE3000, the picture goes on the
 unit like a label.
 
-## Add, move, and remove gear
+## Add, replace, move, and remove blocks
 
-- **Add a unit:** press **Add gear**, or ++g++, then drag a unit from the drawer
-  to where you want it in the chain. Double-clicking it in the drawer places it
-  where that kind of gear usually goes.
-- **Move a unit:** drag it, or select it and press ++alt+left++ or ++alt+right++.
-- **Remove a unit:** select it and press ++delete++, or drag it to the open drawer.
-- **Bypass a pedal:** press its footswitch, or select it and press ++b++.
-- **Tidy up:** **Arrange** sorts the chain into a common order.
-  It's a guideline, and you can drag anything back out of it.
+![The gear picker open under the chain, adding a block between the amp and the cabinet](../assets/screens/chain-picker.webp)
+
+- **Add a block:** press the **+** between two blocks, or after the last one. The
+  gear picker opens right under the chain and says where the block will go, such
+  as "Between Understory (2 · Amp) and Deadfall 412 (3 · Cabinet)". Click any gear
+  in it to put it there. **+ Add block**, or ++g++, opens the same picker for the
+  spot after the selected block, or, with nothing selected, where that kind of gear
+  usually goes.
+- **Replace a block:** hover over its card and press **Replace**, or press
+  **Replace** in the panel beside the stage. The picker opens for that spot. A
+  capture of the same kind keeps the block's knob settings.
+- **Move a block:** drag its card, or select it and press ++alt+left++ or
+  ++alt+right++. You can also drag gear from the picker straight to any gap.
+- **Remove a block:** hover over its card and press **Remove**, or select it and
+  press ++delete++. ++ctrl+z++ brings it back.
+- **Switch a block on or off:** click **On** or **Off** on its card, press the
+  footswitch of a pedal on the stage, or select it and press ++b++.
+- **Tidy up:** **Sort** puts the chain into a common order. It's a guideline,
+  and you can drag anything back out of it.
+
+The picker's tabs narrow it to **Amps**, **Cabinets**, **Pedals**, or **My
+captures**. ++esc++ closes it.
 
 The usual order is compression and drives first, then the gate, amp, and cabinet,
 then modulation, delay, and reverb.
@@ -30,8 +56,9 @@ then modulation, delay, and reverb.
 To keep one rig but change which units are on and how they're set, for a verse
 and a solo, use [scenes](scenes.md).
 
-Click a unit to put it on the stage. Pedals, amps, and captures have their knobs
-on the faceplate. A cabinet's **Level** knob sits in the panel beside it. Every
+Click a block to put it on the stage. Pedals, amps, and captures have their knobs
+on the faceplate. The arrows either side of its name on the stage step to the
+blocks either side of it. A cabinet's **Level** knob sits in the panel beside it. Every
 edit can be undone with ++ctrl+z++. See [Keyboard and mouse](controls.md) for
 all the controls.
 
@@ -52,10 +79,10 @@ These all work with no files.
 
 ## Add your own amps and pedals
 
-Press **Add .nam** in the gear drawer and choose one or more capture files. Each one is
-checked, copied into your library, and listed under **Amp captures** or **Pedal
-captures**, depending on what the file says it is. Drag it onto the chain like
-any other unit. A capture's own name goes on its faceplate, and a pedal capture
+Open the gear picker and press **Import .nam files**, then choose one or more
+capture files. Each one is checked, copied into your library, and listed in the
+picker under **Amps** or **Pedals**, depending on what the file says it is, and
+under **My captures**. Add it to the chain like any other block. A capture's own name goes on its faceplate, and a pedal capture
 picks its look from words in that name, such as `fuzz` or `delay`.
 
 A capture has three controls:
@@ -72,13 +99,13 @@ why. The rest of the rig keeps playing.
 
 ### Compare captures in the same spot
 
-To hear one capture against another with everything else the same, select the amp
-or pedal unit. Its panel lists your other captures of that kind under **Swap
-capture**. Click one and it takes the unit's place, keeping the Input, Output, and
-Quality settings and its spot in every scene.
+To hear one capture against another with everything else the same, press
+**Replace** on the amp or pedal block and pick another capture of that kind. The
+picker marks those **Keeps the knobs**: the new capture takes the block's place,
+keeping the Input, Output, and Quality settings and its spot in every scene.
 
-You can also drag a capture from the gear drawer onto a unit of the same kind. The
-unit lights up, and dropping there swaps it instead of adding a new unit.
+You can also drag a capture from the picker onto a block of the same kind. The
+card lights up, and dropping there swaps it instead of adding a new block.
 
 Captures often have their own license, so check the terms of any file before you
 share it. The [NAM project](https://www.neuralampmodeler.com/) has tools for

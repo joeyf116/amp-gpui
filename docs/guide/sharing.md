@@ -16,8 +16,8 @@ is re-hashed before anything is added, so a pack can't swap a file for something
 else. If any file fails, nothing is imported.
 
 Imported tones play straight away. Their captures don't appear in your gear
-drawer, though, because it only lists captures you've added yourself. Press **Add
-.nam** to add them.
+picker, though, because it only lists captures you've added yourself. Press
+**Import .nam files** in the picker to add them.
 
 The [tone generator](generate.md) produces this same kind of pack.
 

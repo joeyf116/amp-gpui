@@ -6,8 +6,8 @@ The window has four bands, and the code for each lives under
 | Band | What it holds | Code |
 | --- | --- | --- |
 | Header | Logo, tone picker, Save, Undo, Redo, levels, meters, Monitor | `header.rs` |
-| Chain strip | The units in signal order, with drag-and-drop | `board.rs` |
-| Stage | The selected unit up close, its details, and the gear drawer | `board.rs` |
+| Signal chain | Numbered block cards in signal order, the + gaps, drag-and-drop, and the gear picker | `chain.rs` |
+| Stage | The selected block up close, with its number, type, name, and details | `board.rs` |
 | Footer | Audio status, Audio setup, tempo, and Practice tools | `audio.rs` |
 
 Keys are in `keys.rs`, and loading, saving, and undo are in `tones.rs`. The tone
@@ -20,6 +20,13 @@ are set once.
 
 The stage scales each unit to fit the room left in the window, down to about half
 size, so nothing clips on a small window.
+
+Every structural edit to the chain starts from `chain.rs`. The gear picker is one
+panel, `Picker`, pointed at a `PickAt`: where gear usually goes, a gap, or a block
+to replace. It drops down over the stage rather than pushing it, so the unit being
+worked on keeps its size. A block is named the same way everywhere, by
+`Rig::block_label`: its number from the guitar, its role from `Shape::role`, and
+its own name.
 
 ## Color
 

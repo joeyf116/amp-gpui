@@ -91,18 +91,20 @@ scrolling tab, then slow it down, loop it, fix the notes, and see how you played
 | Turn a knob | Drag up or down, or scroll |
 | Fine adjustment | Hold Shift while dragging or scrolling |
 | Reset a knob | Double-click it |
-| Put a unit on the stage | Click it |
-| Bypass a pedal | Press its footswitch, or select it and press B |
-| Select a unit | Left and Right |
-| Move a unit | Alt+Left and Alt+Right |
-| Remove a unit | Delete, or drag it to the gear drawer |
+| Put a block on the stage | Click its card |
+| Add a block | + between two blocks, + Add block, or G |
+| Replace a block | Replace on its card |
+| Switch a block on or off | On or Off on its card, or select it and press B |
+| Select a block | Left and Right |
+| Move a block | Drag its card, or Alt+Left and Alt+Right |
+| Remove a block | Remove on its card, or Delete |
 | Undo and redo | Ctrl+Z, and Ctrl+Y or Ctrl+Shift+Z |
 | Previous or next tone | Page Up and Page Down |
 | Start or stop monitoring | M |
 | Practice tools | T |
 | Metronome on or off | K |
 | Tone Explorer | Ctrl+O |
-| Gear drawer | G |
+| Gear picker | G |
 
 ## Status
 
