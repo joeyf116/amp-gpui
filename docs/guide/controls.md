@@ -15,12 +15,14 @@ pedal.
 
 | Action | How |
 | --- | --- |
-| Select a unit | ++left++ and ++right++, or click it |
-| Put the first unit on the stage | ++enter++ |
-| Clear the stage, or close an open panel | ++esc++ |
-| Bypass it | Press its footswitch, or press ++b++ |
-| Move it | Drag it, or press ++alt+left++ and ++alt+right++ |
-| Remove it | ++delete++, or drag it to the open gear drawer |
+| Select a block | ++left++ and ++right++, or click its card |
+| Put the first block on the stage | ++enter++ |
+| Add a block | **+** between two blocks, **+ Add block**, or ++g++ |
+| Replace it | **Replace** on its card |
+| Switch it on or off | **On** or **Off** on its card, its footswitch on the stage, or ++b++ |
+| Move it | Drag its card, or press ++alt+left++ and ++alt+right++ |
+| Remove it | **Remove** on its card, or ++delete++ |
+| Close the gear picker, an open panel, or the stage | ++esc++ |
 | Undo | ++ctrl+z++ |
 | Redo | ++ctrl+y++ or ++ctrl+shift+z++ |
 
@@ -44,7 +46,7 @@ unsaved work is never lost. One long turn of a knob counts as one edit.
 | Practice tools | ++t++ |
 | Metronome on or off | ++k++ |
 | Tone Explorer | ++ctrl+o++ |
-| Gear drawer | ++g++ |
+| Gear picker | ++g++ |
 | Tone assistant | ++ctrl+j++ |
 | Flip between old and new while trying a suggestion | ++ctrl+b++ |
 | Save the tone | ++ctrl+s++ |

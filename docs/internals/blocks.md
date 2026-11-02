@@ -7,7 +7,7 @@ an id breaks saved presets. Names and the order of the list can change freely.
 ## NAM amp and pedal
 
 `kind: "amp"` and `kind: "pedal"` both run `NamAmp` (`amp.rs`). A pedal is the same
-thing as an amp except for where it sits, and the gear drawer sorts captures using the
+thing as an amp except for where it sits, and the gear picker sorts captures using the
 file's `gear_type`.
 
 | id | Name | Unit | Min | Max | Default |

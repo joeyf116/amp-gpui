@@ -368,7 +368,7 @@ impl Rig {
     }
 
     /// Points an amp or pedal unit at a `.nam` file, for a capture that's
-    /// missing from the library. The file joins the gear drawer too.
+    /// missing from the library. The file joins the gear picker too.
     pub(super) fn locate_capture(
         &mut self,
         slot: usize,

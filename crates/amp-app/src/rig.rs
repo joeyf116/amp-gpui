@@ -2,6 +2,7 @@ mod assistant;
 mod assistant_view;
 mod audio;
 mod board;
+mod chain;
 mod explorer;
 mod fretboard;
 mod header;
@@ -148,9 +149,14 @@ pub struct Rig {
     tone3000: Tone3000,
     update: Update,
     assistant: Assistant,
-    gear_open: bool,
+    /// The gear picker, open under the chain and pointed at a spot in it.
+    gear_picker: Option<chain::Picker>,
 
     selected: Option<usize>,
+    /// The block card under the pointer, which shows its Replace and Remove.
+    hover_unit: Option<usize>,
+    /// The gap under the pointer, which shows its +.
+    hover_add: Option<usize>,
     hover_gap: Option<usize>,
     /// A unit a capture is held over, which a drop swaps the capture into.
     hover_swap: Option<usize>,
@@ -310,8 +316,10 @@ impl Rig {
             tone3000: Tone3000::new(),
             update: Update::default(),
             assistant,
-            gear_open: false,
+            gear_picker: None,
             selected: None,
+            hover_unit: None,
+            hover_add: None,
             hover_gap: None,
             hover_swap: None,
             smoke_phase: 0.0,
