@@ -1,10 +1,14 @@
-use crate::{AssetKind, AssetRef, Preset, SCHEMA_VERSION};
-use amp_dsp::DspError;
+use crate::{
+    AssetKind, AssetRef, Preset, SCHEMA_VERSION,
+    cache::{AssetCache, Impulse},
+};
+use amp_dsp::{DspError, IrCab, NamAmp, NamModel};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::{
     fs, io,
     path::{Path, PathBuf},
+    sync::{Arc, Mutex, PoisonError},
 };
 
 const PRESETS: &str = "presets";
@@ -40,10 +44,12 @@ pub struct PresetEntry {
     pub preset: Preset,
 }
 
-/// A tone library rooted at a folder the user chose.
+/// A tone library rooted at a folder the user chose. Clones share one cache
+/// of parsed files.
 #[derive(Clone, Debug)]
 pub struct Library {
     root: PathBuf,
+    cache: Arc<Mutex<AssetCache>>,
 }
 
 impl Library {
@@ -51,7 +57,42 @@ impl Library {
         let root = root.into();
         fs::create_dir_all(root.join(PRESETS))?;
         fs::create_dir_all(root.join(ASSETS))?;
-        Ok(Self { root })
+        Ok(Self::at(root))
+    }
+
+    fn at(root: PathBuf) -> Self {
+        Self {
+            root,
+            cache: Arc::default(),
+        }
+    }
+
+    fn cache(&self) -> std::sync::MutexGuard<'_, AssetCache> {
+        // The cache only ever holds whole entries, so one left by a panic is fine.
+        self.cache.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// A capture, parsed and ready to build from. Parsed once, then kept.
+    pub fn capture(&self, asset: &AssetRef) -> Result<Arc<NamModel>, LibraryError> {
+        let hash = asset.sha256.to_lowercase();
+        if let Some(model) = self.cache().model(&hash) {
+            return Ok(model);
+        }
+        // Parsed with the lock released, so a slow file holds up nobody else.
+        let model = Arc::new(NamAmp::read(&self.asset_path(asset)?)?);
+        self.cache().keep_model(&hash, Arc::clone(&model));
+        Ok(model)
+    }
+
+    /// An impulse response as mono samples and their rate. Read once, then kept.
+    pub(crate) fn impulse(&self, asset: &AssetRef) -> Result<Impulse, LibraryError> {
+        let hash = asset.sha256.to_lowercase();
+        if let Some(impulse) = self.cache().impulse(&hash) {
+            return Ok(impulse);
+        }
+        let impulse = Arc::new(IrCab::read(&self.asset_path(asset)?)?);
+        self.cache().keep_impulse(&hash, Arc::clone(&impulse));
+        Ok(impulse)
     }
 
     pub fn root(&self) -> &Path {
@@ -160,9 +201,7 @@ impl Library {
     /// Adds every preset in the pack at `source` to this library. Each file
     /// is re-hashed first, so a pack can't swap in something else.
     pub fn import_pack(&self, source: &Path) -> Result<Vec<Preset>, LibraryError> {
-        let pack = Self {
-            root: source.into(),
-        };
+        let pack = Self::at(source.into());
         let (entries, errors) = pack.presets()?;
         if let Some(error) = errors.into_iter().next() {
             return Err(error);
@@ -205,6 +244,8 @@ fn read_preset(path: &Path) -> Result<Preset, LibraryError> {
     if preset.schema > SCHEMA_VERSION {
         return Err(LibraryError::NewerSchema(preset.name));
     }
+    let mut preset = preset;
+    preset.align_scenes();
     Ok(preset)
 }
 

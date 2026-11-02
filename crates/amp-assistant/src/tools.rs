@@ -294,6 +294,7 @@ fn get_tone(input: &Value, snapshot: &Snapshot) -> Outcome {
                 .collect();
             Outcome::Read(
                 json!({"name": tone.name, "tags": tone.tags, "notes": tone.notes,
+                       "level_db": tone.level(), "scenes": tone.scenes.len(),
                        "blocks": blocks})
                 .to_string(),
             )

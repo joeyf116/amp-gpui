@@ -7,15 +7,19 @@
 //! down to one preset.
 
 mod build;
+mod cache;
 mod catalog;
 mod factory;
 mod level;
 mod library;
 mod preset;
 
-pub use build::{BuiltChain, build_chain};
+pub use build::{BuiltChain, build_chain, level_slot};
 pub use catalog::{CaptureEntry, CaptureKind};
 pub use factory::factory_tones;
-pub use level::{loudness, trim_to};
+pub use level::{MATCHED_LOUDNESS, loudness, matched_level, trim_to};
 pub use library::{Library, LibraryError, PresetEntry};
-pub use preset::{AssetKind, AssetRef, BlockPreset, Preset, SCHEMA_VERSION, ToneOrigin};
+pub use preset::{
+    AssetKind, AssetRef, BlockPreset, LEVEL_RANGE, MAX_SCENES, Preset, SCHEMA_VERSION, Scene,
+    SceneBlock, ToneOrigin,
+};

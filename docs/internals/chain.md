@@ -18,6 +18,11 @@ pub trait Block: Send {
 
     /// Returns to silence, dropping tails and history.
     fn reset(&mut self);
+
+    /// Whether it keeps sounding after its input stops, like a delay.
+    fn has_tail(&self) -> bool {
+        false
+    }
 }
 ```
 
@@ -43,8 +48,12 @@ between blocks. They don't touch the chain's structure:
 - `SetBypassed` for a footswitch
 - `SetInputGain` and `SetOutputGain` for the level knobs
 
+A scene switch is only small edits: the UI sends every block's bypass and
+parameters, and the tone level, for the new scene (`Rig::sync_settings`). That's
+why scenes have no gap and why delay and reverb tails carry over.
+
 **Structural edits** rebuild the whole chain. Adding, moving, or removing a unit,
-loading a cabinet, undoing, and loading a tone all work this way.
+swapping a capture, loading a cabinet, undoing, and loading a tone all work this way.
 
 ```mermaid
 sequenceDiagram
@@ -70,6 +79,10 @@ The pieces of this sequence each exist for a reason:
   it, so smoothed controls reach their values. Without this, a new chain starts at
   unity gain and is too loud for a few milliseconds, which you'd hear as a pop on
   every edit.
+- **Files are read once.** The library keeps up to 24 parsed captures and 24
+  decoded IRs, by content hash (`crates/amp-preset/src/cache.rs`). A rebuild after a
+  move or undo builds fresh blocks from those instead of parsing megabytes of JSON
+  again. A block keeps its own state, so only the parsed file is shared.
 - **Captures warm up off the audio thread.** The model's startup transient runs
   during loading.
 - **Swaps crossfade.** The old chain keeps running for 240 samples, 5 ms, while the
@@ -79,14 +92,17 @@ The pieces of this sequence each exist for a reason:
   free memory there, so it goes back through a queue. If that queue is full, the
   audio thread holds it and takes no new chain until there's room.
 
-When loading a tone, the chain is built first, and the tone is adopted only if
-every file loads. A bad file leaves the current tone playing.
+A file that's missing or can't run doesn't fail the build. That block becomes a
+pass-through, or the built-in cabinet for a cab, and `BuiltChain::problems` says
+why, one entry per block, for the unit to show. One bad file never costs the
+player the whole tone.
 
 ## The chain strip and the chain
 
 The UI's chain strip is a view of the `Preset`, and a slot on the strip is the same index
 as a slot in the chain. That's what lets a `SetParam` command address a knob by
-slot and parameter number.
+slot and parameter number. The tone level is the slot after the last block
+(`amp_preset::level_slot`).
 
 Undo keeps up to 64 copies of the preset. A step restores a copy and rebuilds the
 chain. Consecutive changes to the same knob count as one step.

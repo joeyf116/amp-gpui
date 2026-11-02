@@ -576,7 +576,7 @@ impl Rig {
         match slot {
             Some(slot) => {
                 self.remember();
-                self.preset.blocks[slot] = block;
+                self.preset.replace_block(slot, block);
                 self.selected = Some(slot);
                 self.tone3000.target = Some(slot);
                 self.rebuild_chain(cx);

@@ -47,3 +47,5 @@ unsaved work is never lost. One long turn of a knob counts as one edit.
 | Gear drawer | ++g++ |
 | Tone assistant | ++ctrl+j++ |
 | Flip between old and new while trying a suggestion | ++ctrl+b++ |
+| Save the tone | ++ctrl+s++ |
+| Switch to scene 1, 2, 3, or 4 | ++1++, ++2++, ++3++, ++4++ |

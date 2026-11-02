@@ -179,7 +179,7 @@ impl Rig {
     }
 
     fn press_update(&mut self, cx: &mut Context<Self>) {
-        let unsaved = self.preset.blocks != self.saved_blocks;
+        let unsaved = self.edited();
         match std::mem::take(&mut self.update) {
             Update::Available(release) if unsaved => self.update = Update::Confirming(release),
             Update::Available(release) | Update::Confirming(release) => {

@@ -27,6 +27,9 @@ unit like a label.
 The usual order is compression and drives first, then the gate, amp, and cabinet,
 then modulation, delay, and reverb.
 
+To keep one rig but change which units are on and how they're set, for a verse
+and a solo, use [scenes](scenes.md).
+
 Click a unit to put it on the stage. Pedals, amps, and captures have their knobs
 on the faceplate. A cabinet's **Level** knob sits in the panel beside it. Every
 edit can be undone with ++ctrl+z++. See [Keyboard and mouse](controls.md) for
@@ -63,8 +66,19 @@ A capture has three controls:
 | Output | The level coming out |
 | Quality | Trades CPU for detail, on captures that support it |
 
-Captures need to be **48 kHz**, which most are. The app can't resample a capture,
-so any other rate gets an error when you put it on the chain.
+Captures need to be **48 kHz**, which most are. The app can't resample a capture
+yet, so a capture at any other rate passes your signal through, and its panel says
+why. The rest of the rig keeps playing.
+
+### Compare captures in the same spot
+
+To hear one capture against another with everything else the same, select the amp
+or pedal unit. Its panel lists your other captures of that kind under **Swap
+capture**. Click one and it takes the unit's place, keeping the Input, Output, and
+Quality settings and its spot in every scene.
+
+You can also drag a capture from the gear drawer onto a unit of the same kind. The
+unit lights up, and dropping there swaps it instead of adding a new unit.
 
 Captures often have their own license, so check the terms of any file before you
 share it. The [NAM project](https://www.neuralampmodeler.com/) has tools for

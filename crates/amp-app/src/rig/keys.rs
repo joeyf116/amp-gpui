@@ -26,13 +26,19 @@ actions!(
         ToggleAssistant,
         CompareTrial,
         TonePrevious,
-        ToneNext
+        ToneNext,
+        SaveTone,
+        Scene1,
+        Scene2,
+        Scene3,
+        Scene4
     ]
 );
 
-/// Single letters that act on the rig. Text fields sit inside the rig, so these
-/// are switched off in them, or typing a tone's name would bypass a pedal.
-const LETTER_KEYS: [&str; 5] = ["b", "g", "k", "m", "t"];
+/// Single letters and digits that act on the rig. Text fields sit inside the
+/// rig, so these are switched off in them, or typing a tone's name would bypass
+/// a pedal or change scene.
+const LETTER_KEYS: [&str; 9] = ["b", "g", "k", "m", "t", "1", "2", "3", "4"];
 
 /// Keys that act on the board.
 pub fn bind_keys(cx: &mut App) {
@@ -60,6 +66,11 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("g", ToggleGear, rig),
         KeyBinding::new("ctrl-j", ToggleAssistant, rig),
         KeyBinding::new("ctrl-b", CompareTrial, rig),
+        KeyBinding::new("ctrl-s", SaveTone, rig),
+        KeyBinding::new("1", Scene1, rig),
+        KeyBinding::new("2", Scene2, rig),
+        KeyBinding::new("3", Scene3, rig),
+        KeyBinding::new("4", Scene4, rig),
     ]);
     cx.bind_keys(
         LETTER_KEYS

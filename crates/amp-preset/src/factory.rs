@@ -1,4 +1,4 @@
-use crate::{BlockPreset, Library, LibraryError, Preset, SCHEMA_VERSION, library::write_json};
+use crate::{BlockPreset, Library, LibraryError, Preset, library::write_json};
 use amp_dsp::BlockKind;
 use std::{fs, io::ErrorKind};
 
@@ -11,14 +11,11 @@ fn block(kind: BlockKind, enabled: bool, params: &[(&str, f32)]) -> BlockPreset 
 }
 
 fn tone(name: &str, tags: &[&str], notes: &str, blocks: Vec<BlockPreset>) -> Preset {
-    Preset {
-        schema: SCHEMA_VERSION,
-        name: name.to_owned(),
-        author: "Amp GPUI".to_owned(),
-        tags: tags.iter().map(|tag| (*tag).to_owned()).collect(),
-        notes: notes.to_owned(),
-        blocks,
-    }
+    let mut preset = Preset::new(name, blocks);
+    preset.author = "Amp GPUI".to_owned();
+    preset.tags = tags.iter().map(|tag| (*tag).to_owned()).collect();
+    preset.notes = notes.to_owned();
+    preset
 }
 
 fn amp(params: &[(&str, f32)]) -> BlockPreset {
