@@ -4,7 +4,7 @@
 
 use super::{
     AMP_QUALITY, FOOTER_HEIGHT, HEADER_HEIGHT, KNOB_TONE_LEVEL, Overlay, Rig, assistant_view,
-    chain::{PickAt, STRIP_HEIGHT},
+    chain::{PICKER_HEIGHT, PickAt, STRIP_HEIGHT},
     explorer::pill,
 };
 use crate::{
@@ -24,12 +24,14 @@ use gpui_kit::{
     *,
 };
 
-const SCENE_BAR_HEIGHT: f32 = 48.0;
-const SCENE_LEVEL_KNOB: Pixels = px(30.);
+const SCENE_BAR_HEIGHT: f32 = 52.0;
+const SCENE_LEVEL_KNOB: Pixels = px(32.);
 const DETAILS_WIDTH: f32 = 248.0;
 const STAGE_CAPTION: f32 = 40.0;
 const STAGE_MARGIN: f32 = 28.0;
-const STAGE_SCALE: (f32, f32) = (0.55, 1.2);
+/// The smallest a unit gets on the stage. Below this its knob names run into
+/// each other, so the board scrolls instead.
+const STAGE_SCALE: (f32, f32) = (0.72, 1.2);
 const DETAILS_KNOB: Pixels = px(58.);
 
 /// Something in the rack that can go on the board.
@@ -302,7 +304,8 @@ impl Rig {
             self.preset.level(),
             SCENE_LEVEL_KNOB,
             cx.listener(|this, value: &f32, _, cx| this.set_tone_level(*value, cx)),
-        );
+        )
+        .inline();
         let level_label = if scenes > 0 {
             "Scene level"
         } else {
@@ -311,8 +314,8 @@ impl Rig {
         h_flex()
             .flex_shrink_0()
             .h(px(SCENE_BAR_HEIGHT))
-            .px_3()
-            .gap_2()
+            .px_4()
+            .gap_3()
             .items_center()
             .border_b_1()
             .border_color(hairline())
@@ -583,6 +586,11 @@ impl Rig {
             - STRIP_HEIGHT
             - SCENE_BAR_HEIGHT
             - STAGE_CAPTION
+            - if self.gear_picker.is_some() {
+                PICKER_HEIGHT
+            } else {
+                0.0
+            }
             - STAGE_MARGIN;
         let panel = if self.assistant.open {
             assistant_view::PANEL_WIDTH
@@ -649,6 +657,14 @@ impl Rig {
         })
     }
 
+    /// The height the stage needs for the selected unit at its scale, so the
+    /// board scrolls rather than clip or crowd it.
+    fn stage_height(&self, slot: usize, window: &Window) -> f32 {
+        let art = block_art(&self.preset.blocks[slot], self.block_name(slot));
+        let scale = self.stage_scale(&art.shape, window);
+        art.shape.stage_size().1 * scale + STAGE_CAPTION + STAGE_MARGIN
+    }
+
     pub(super) fn render_board_view(
         &self,
         window: &mut Window,
@@ -662,18 +678,26 @@ impl Rig {
         } else {
             "Click a block in the chain to see its knobs."
         };
-        // The picker drops down over the scenes and the stage, so opening it
-        // doesn't shrink the unit being worked on.
-        let below = v_flex()
-            .relative()
-            .flex_1()
-            .min_h_0()
+        let stage_height = selected.map_or(0.0, |slot| self.stage_height(slot, window));
+        // Everything sits in one column: the picker opens in line under the
+        // chain it edits and moves the scenes and the stage down. Nothing ever
+        // sits on top of anything else, and when the window is too short for
+        // all of it, the column scrolls.
+        v_flex()
+            .id("board")
+            .size_full()
+            .overflow_y_scroll()
+            .child(self.render_strip(window, cx))
+            .when_some(self.gear_picker, |below, picker| {
+                below.child(self.render_picker(picker, cx))
+            })
             .child(self.render_scene_bar(cx))
             .child(
                 h_flex()
                     .flex_1()
-                    .min_h_0()
-                    .items_start()
+                    .flex_shrink_0()
+                    .min_h(px(stage_height))
+                    .items_stretch()
                     .child(
                         h_flex()
                             .flex_1()
@@ -696,21 +720,6 @@ impl Rig {
                         row.child(self.render_details(slot, cx))
                     }),
             )
-            .when_some(self.gear_picker, |below, picker| {
-                below.child(
-                    div()
-                        .absolute()
-                        .top_0()
-                        .left_0()
-                        .right_0()
-                        .shadow_lg()
-                        .child(self.render_picker(picker, cx)),
-                )
-            });
-        v_flex()
-            .size_full()
-            .child(self.render_strip(window, cx))
-            .child(below)
     }
 
     pub(super) fn render_backdrop(&self) -> impl IntoElement {

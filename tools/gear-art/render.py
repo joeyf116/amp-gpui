@@ -344,19 +344,23 @@ def graphic_capture(draw, w, h):
             draw.ellipse([x - 9, y - 9, x + 9, y + 9], fill=255)
 
 
-# Every pedal shares one muted family, told apart by shade, finish, and graphic.
-# The printed graphic takes the logo's green, and text is drawn in its off-white.
-LOGO_INK = (0.5, 0.84, 0.63)
+# Each type of pedal has its own paint, so a drive never looks like a delay at a
+# glance, even as a thumbnail. The colors stay deep and a little dusty, to sit
+# with the app's dark neutrals. Green is left out, since the app's green marks
+# what's live or selected. Printed graphics and text take an off-white, or a
+# dark ink on the light pedals.
+LIGHT_INK = (0.93, 0.94, 0.9)
+DARK_INK = (0.07, 0.08, 0.08)
 PEDALS = {
-    "gate": ((0.2, 0.21, 0.205), wrinkle, graphic_gate, LOGO_INK, 0.16),
-    "compressor": ((0.115, 0.12, 0.118), hammertone, graphic_compressor, LOGO_INK, 0.3),
-    "boost": ((0.33, 0.34, 0.335), satin, graphic_boost, LOGO_INK, 0.2),
-    "overdrive": ((0.16, 0.165, 0.162), hammertone, graphic_overdrive, LOGO_INK, 0.32),
-    "distortion": ((0.06, 0.063, 0.062), wrinkle, graphic_distortion, LOGO_INK, 0.16),
-    "fuzz": ((0.09, 0.094, 0.092), hammertone, graphic_fuzz, LOGO_INK, 0.3),
-    "modulation": ((0.25, 0.258, 0.254), satin, graphic_modulation, LOGO_INK, 0.26),
-    "delay": ((0.1, 0.105, 0.103), satin, graphic_delay, LOGO_INK, 0.26),
-    "reverb": ((0.28, 0.288, 0.284), hammertone, graphic_reverb, LOGO_INK, 0.28),
+    "gate": ((0.15, 0.155, 0.16), wrinkle, graphic_gate, LIGHT_INK, 0.16),
+    "compressor": ((0.07, 0.15, 0.36), hammertone, graphic_compressor, LIGHT_INK, 0.3),
+    "boost": ((0.62, 0.48, 0.1), satin, graphic_boost, DARK_INK, 0.22),
+    "overdrive": ((0.64, 0.26, 0.06), hammertone, graphic_overdrive, LIGHT_INK, 0.32),
+    "distortion": ((0.5, 0.05, 0.07), wrinkle, graphic_distortion, LIGHT_INK, 0.18),
+    "fuzz": ((0.37, 0.08, 0.3), hammertone, graphic_fuzz, LIGHT_INK, 0.3),
+    "modulation": ((0.04, 0.38, 0.42), satin, graphic_modulation, LIGHT_INK, 0.26),
+    "delay": ((0.21, 0.13, 0.44), satin, graphic_delay, LIGHT_INK, 0.26),
+    "reverb": ((0.58, 0.62, 0.66), hammertone, graphic_reverb, DARK_INK, 0.28),
     "capture": ((0.56, 0.57, 0.565), brushed, graphic_capture, (0.07, 0.09, 0.08), 0.3),
 }
 

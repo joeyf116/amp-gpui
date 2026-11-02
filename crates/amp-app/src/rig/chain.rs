@@ -31,17 +31,20 @@ use gpui_kit::{
     *,
 };
 
-pub(super) const STRIP_HEIGHT: f32 = 238.0;
-const PICKER_HEIGHT: f32 = 252.0;
-const CARD_WIDTH: f32 = 140.0;
-const CARD_HEIGHT: f32 = 164.0;
+pub(super) const STRIP_HEIGHT: f32 = 280.0;
+/// The picker sits in the column with everything else, so opening it moves the
+/// stage down rather than covering it. Kept short so the stage still fits.
+pub(super) const PICKER_HEIGHT: f32 = 238.0;
+const CARD_WIDTH: f32 = 152.0;
+const CARD_HEIGHT: f32 = 190.0;
 /// The room a unit's picture gets on its card.
-const CARD_ART: (f32, f32) = (124.0, 92.0);
-const ACTIONS_HEIGHT: f32 = 22.0;
-const GAP_WIDTH: f32 = 30.0;
-const PLUS_SIZE: f32 = 22.0;
-const OPTION_WIDTH: f32 = 124.0;
-const OPTION_ART: (f32, f32) = (104.0, 64.0);
+const CARD_ART: (f32, f32) = (132.0, 104.0);
+const ACTIONS_HEIGHT: f32 = 28.0;
+const GAP_WIDTH: f32 = 48.0;
+const PLUS_SIZE: f32 = 26.0;
+const STRIPE: f32 = 4.0;
+const OPTION_WIDTH: f32 = 116.0;
+const OPTION_ART: (f32, f32) = (96.0, 56.0);
 const BUILT_IN: [BlockKind; 8] = [
     BlockKind::Tube,
     BlockKind::Cab,
@@ -426,6 +429,7 @@ impl Rig {
         let show_actions = (selected || self.hover_unit == Some(slot)) && !cx.has_active_drag();
         let warning = cx.theme().warning;
         let role = art.shape.role();
+        let tint = art.shape.tint();
         let tip = format!(
             "{} {role}: {}. Click to edit, drag to move.",
             ordinal(slot + 1),
@@ -482,9 +486,12 @@ impl Rig {
             .relative()
             .w(px(CARD_WIDTH))
             .h(px(CARD_HEIGHT))
-            .p_2()
-            .gap_1()
+            .px_3()
+            .pb_3()
+            .pt(px(12.0 + STRIPE))
+            .gap_2()
             .rounded_lg()
+            .overflow_hidden()
             .border_1()
             .bg(if lit { card_lit() } else { card() })
             .border_color(if lit { moss() } else { hairline() })
@@ -498,14 +505,24 @@ impl Rig {
                 card.hover(|card| card.border_color(moss_glow(0.5)))
             })
             .cursor_grab()
+            // Each kind of gear wears its own color along the top of its card.
+            .child(
+                div()
+                    .absolute()
+                    .top_0()
+                    .left_0()
+                    .right_0()
+                    .h(px(STRIPE))
+                    .bg(tint.opacity(if enabled { 0.9 } else { 0.35 })),
+            )
             .child(
                 h_flex()
-                    .gap_1()
+                    .gap_2()
                     .items_center()
                     .child(
                         div()
                             .flex_shrink_0()
-                            .size(px(18.))
+                            .size(px(20.))
                             .rounded_full()
                             .flex()
                             .items_center()
@@ -526,7 +543,7 @@ impl Rig {
                             .text_xs()
                             .font_semibold()
                             .truncate()
-                            .text_color(if lit { moss() } else { fog() })
+                            .text_color(tint)
                             .child(role.to_uppercase()),
                     ),
             )
@@ -693,9 +710,9 @@ impl Rig {
             .bg(pane())
             .child(
                 h_flex()
-                    .px_3()
-                    .pt_2()
-                    .gap_2()
+                    .px_4()
+                    .pt_3()
+                    .gap_3()
                     .items_center()
                     .child(div().text_sm().font_semibold().child("Signal chain"))
                     .child(div().text_xs().text_color(fog()).child(match count {
@@ -739,9 +756,9 @@ impl Rig {
                     .id("chain")
                     .flex_1()
                     .min_h_0()
-                    .px_3()
+                    .px_4()
                     .items_start()
-                    .pt_2()
+                    .pt_4()
                     .overflow_x_scroll()
                     .children(row),
             )
@@ -812,11 +829,15 @@ impl Rig {
         };
         v_flex()
             .id(("option", id))
+            .relative()
             .flex_shrink_0()
             .w(px(OPTION_WIDTH))
-            .p_2()
+            .px_2()
+            .pb_2()
+            .pt(px(8.0 + STRIPE))
             .gap_1()
             .rounded_lg()
+            .overflow_hidden()
             .border_1()
             .border_color(if current { moss() } else { hairline() })
             .bg(if current { moss_glow(0.08) } else { well() })
@@ -829,9 +850,19 @@ impl Rig {
             })
             .child(
                 div()
+                    .absolute()
+                    .top_0()
+                    .left_0()
+                    .right_0()
+                    .h(px(STRIPE))
+                    .bg(art.shape.tint().opacity(0.9)),
+            )
+            .child(
+                div()
                     .text_xs()
                     .font_semibold()
-                    .text_color(moss())
+                    .truncate()
+                    .text_color(art.shape.tint())
                     .child(art.shape.role().to_uppercase()),
             )
             .child(
@@ -908,16 +939,18 @@ impl Rig {
             .bg(sheet().opacity(1.0))
             .child(
                 h_flex()
-                    .px_3()
-                    .pt_2()
-                    .gap_3()
+                    .px_4()
+                    .pt_3()
+                    .gap_4()
                     .items_center()
                     .child(
                         v_flex()
-                            .min_w_0()
+                            .flex_shrink_0()
+                            .max_w(px(460.))
                             .child(div().font_semibold().text_color(moss()).child(title))
                             .child(div().text_xs().text_color(fog()).truncate().child(place)),
                     )
+                    .child(h_flex().gap_1().items_center().children(shelves))
                     .child(div().flex_1())
                     .child(
                         Button::new("import-nam")
@@ -950,20 +983,12 @@ impl Rig {
             )
             .child(
                 h_flex()
-                    .px_3()
-                    .pt_2()
-                    .gap_1()
-                    .items_center()
-                    .children(shelves),
-            )
-            .child(
-                h_flex()
                     .id("picker-gear")
                     .flex_1()
                     .min_h_0()
-                    .px_3()
-                    .py_2()
-                    .gap_2()
+                    .px_4()
+                    .py_3()
+                    .gap_3()
                     .items_start()
                     .overflow_x_scroll()
                     .when(empty, |row| {

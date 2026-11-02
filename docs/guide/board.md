@@ -19,11 +19,27 @@ The selected card is lit in green, and the stage and the panel beside it repeat
 its number, type, and name, so the knobs always say whose they are. Hover over a
 card for a reminder of what it is.
 
-![Generated gear art: stompboxes, a tube head, and two 4x12 cabinets](../assets/screens/gear.webp)
+![Generated gear art: ten colored stompboxes, two tube heads, and two 4x12 cabinets](../assets/screens/gear.webp)
 
-Pedals share one muted finish, and each type has its own printed graphic. When a
-tone comes with its own picture, such as one from TONE3000, the picture goes on the
-unit like a label.
+Each type of pedal has its own paint and printed graphic, so you can tell them
+apart at a glance:
+
+| Paint | Type |
+| --- | --- |
+| Blue | Compressor |
+| Magenta | Fuzz |
+| Yellow | Boost |
+| Orange | Overdrive |
+| Red | Distortion |
+| Black | Noise gate |
+| Teal | Modulation |
+| Violet | Delay |
+| Pale silver | Reverb |
+| Brushed aluminum | Pedal capture of another kind |
+
+The same color runs along the top of each card in the chain and the picker, and
+colors its type name. Amps and cabinets stay black. When a tone comes with its own
+picture, such as one from TONE3000, the picture goes on the unit like a label.
 
 ## Add, replace, move, and remove blocks
 
@@ -48,7 +64,9 @@ unit like a label.
   and you can drag anything back out of it.
 
 The picker's tabs narrow it to **Amps**, **Cabinets**, **Pedals**, or **My
-captures**. ++esc++ closes it.
+captures**. ++esc++ closes it. The picker opens in line, so it moves the stage
+down rather than covering it. When the window is too short for everything, scroll
+the board.
 
 The usual order is compression and drives first, then the gate, amp, and cabinet,
 then modulation, delay, and reverb.

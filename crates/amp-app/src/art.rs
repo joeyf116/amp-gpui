@@ -172,11 +172,29 @@ impl PedalLook {
         }
     }
 
-    /// The print color on this pedal's paint. Bare aluminum takes dark ink.
+    /// The print color on this pedal's paint. Light paint and bare aluminum
+    /// take dark ink.
     fn ink(self) -> Hsla {
         match self {
-            Self::Capture => hsla(0.42, 0.05, 0.07, 1.0),
+            Self::Boost | Self::Reverb | Self::Capture => hsla(0.42, 0.05, 0.07, 1.0),
             _ => hsla(0.4, 0.26, 0.93, 1.0),
+        }
+    }
+
+    /// This type's paint, lifted so it reads as a tag on a dark card. It
+    /// matches `tools/gear-art/render.py`.
+    fn tint(self) -> Hsla {
+        match self {
+            Self::Gate => hsla(0.58, 0.06, 0.62, 1.0),
+            Self::Compressor => hsla(0.61, 0.62, 0.66, 1.0),
+            Self::Boost => hsla(0.13, 0.7, 0.58, 1.0),
+            Self::Overdrive => hsla(0.065, 0.78, 0.6, 1.0),
+            Self::Distortion => hsla(0.995, 0.66, 0.6, 1.0),
+            Self::Fuzz => hsla(0.86, 0.5, 0.66, 1.0),
+            Self::Modulation => hsla(0.51, 0.62, 0.55, 1.0),
+            Self::Delay => hsla(0.73, 0.52, 0.72, 1.0),
+            Self::Reverb => hsla(0.58, 0.22, 0.8, 1.0),
+            Self::Capture => hsla(0.0, 0.0, 0.78, 1.0),
         }
     }
 
@@ -267,6 +285,16 @@ impl Shape {
             Self::Stomp(look) => look.role(),
             Self::Head { .. } => "Amp",
             Self::Cabinet { .. } => "Cabinet",
+        }
+    }
+
+    /// The color that tags this kind of unit wherever it's listed: a pedal's
+    /// own paint, and a quiet off-white for amps and cabinets.
+    pub fn tint(&self) -> Hsla {
+        match self {
+            Self::Stomp(look) => look.tint(),
+            Self::Head { .. } => hsla(0.09, 0.32, 0.72, 1.0),
+            Self::Cabinet { .. } => hsla(0.1, 0.12, 0.66, 1.0),
         }
     }
 

@@ -18,13 +18,14 @@ Which one is open is held in `Overlay`, and ++esc++ closes it. Monitor stays in 
 header because live playing is what the app is for. Devices fold away because they
 are set once.
 
-The stage scales each unit to fit the room left in the window, down to about half
-size, so nothing clips on a small window.
+The stage scales each unit to fit the room left in the window, down to 72% size.
+Past that the board scrolls, so nothing clips or crowds on a small window.
 
 Every structural edit to the chain starts from `chain.rs`. The gear picker is one
 panel, `Picker`, pointed at a `PickAt`: where gear usually goes, a gap, or a block
-to replace. It drops down over the stage rather than pushing it, so the unit being
-worked on keeps its size. A block is named the same way everywhere, by
+to replace. It opens in line under the chain and pushes the scenes and stage down,
+so no panel covers another. The board is one scrolling column, and the stage keeps
+each unit at no less than 72% scale so its knob names never run together. A block is named the same way everywhere, by
 `Rig::block_label`: its number from the guitar, its role from `Shape::role`, and
 its own name.
 
@@ -45,9 +46,12 @@ the logo.
 | Accent, for what's live or selected | `#7fd6a0`, the logo's rings |
 | Highlight | `#e7f2ea`, the logo's waveform |
 
-Amber, red, and blue stay for warnings, errors, and notices. Gear is muted too, so
-pedals differ by shade, finish, and printed graphic. The exception is a tone with its
-own picture, which shows on its unit as a label (`art::stage`). Tube glow stays warm,
+Amber, red, and blue stay for warnings, errors, and notices. Pedals are the one place
+color carries identity: each type has its own paint (set in
+`tools/gear-art/render.py`) and a matching tag color, `Shape::tint`, that runs along
+the top of its card and colors its type name. Green is left out of the pedal paints so
+it only ever means live or selected. Amps and cabinets stay black. A tone with its own
+picture shows it on its unit as a label (`art::stage`). Tube glow stays warm,
 since that's the color of a real tube. The values live in
 `crates/amp-app/assets/theme.json` and `style.rs`, and `docs/stylesheets/forest.css`
 carries them to this site.

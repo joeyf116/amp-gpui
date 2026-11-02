@@ -50,6 +50,9 @@ pub struct Knob {
     size: Pixels,
     look: KnobLook,
     ink: Option<Hsla>,
+    /// Laid out in a row with its value beside it and no name, for a bar
+    /// that already names it.
+    inline: bool,
     on_change: OnChange,
 }
 
@@ -68,8 +71,15 @@ impl Knob {
             size,
             look: KnobLook::Ring,
             ink: None,
+            inline: false,
             on_change: Rc::new(on_change),
         }
+    }
+
+    /// Puts its value beside it and leaves off its name, so it fits a bar.
+    pub fn inline(mut self) -> Self {
+        self.inline = true;
+        self
     }
 
     /// Sets it into a faceplate, with its text in that plate's print color.
@@ -121,6 +131,7 @@ impl RenderOnce for Knob {
             size,
             look,
             ink,
+            inline,
             on_change,
         } = self;
         let drag = window.use_keyed_state(id.clone(), cx, |_, _| None::<Drag>);
@@ -246,11 +257,12 @@ impl RenderOnce for Knob {
 
         div()
             .flex()
-            .flex_col()
+            .when(inline, |knob| knob.flex_row().gap_2())
+            .when(!inline, |knob| knob.flex_col().gap_1().w(size + px(20.0)))
             .items_center()
-            .gap_1()
-            .w(size + px(20.0))
-            .child(div().text_xs().text_color(label_color).child(spec.name))
+            .when(!inline, |knob| {
+                knob.child(div().text_xs().text_color(label_color).child(spec.name))
+            })
             .child(
                 div()
                     .id(id)
