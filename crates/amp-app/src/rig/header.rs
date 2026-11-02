@@ -38,7 +38,7 @@ impl Rig {
     }
 
     fn render_tone_picker(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let edited = self.preset.blocks != self.saved_blocks;
+        let edited = self.edited();
         let name = self.preset.name.clone();
         let favorite = self.is_favorite(&name);
         let title = if edited {
@@ -122,7 +122,8 @@ impl Rig {
 
     pub(super) fn render_header(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let live = self.engine.is_some();
-        let edited = self.preset.blocks != self.saved_blocks;
+        let edited = self.edited();
+        let can_revert = edited && self.saved.is_some();
         let input = Knob::new(
             "level-input",
             KNOB_INPUT,
@@ -170,8 +171,21 @@ impl Rig {
                             .when(edited, |button| button.primary())
                             .when(!edited, |button| button.ghost())
                             .label("Save")
+                            .tooltip("Save over this tone (Ctrl+S)")
                             .on_click(cx.listener(|this, _, _, cx| this.save_preset(cx))),
                     )
+                    .when(can_revert, |row| {
+                        row.child(
+                            Button::new("revert")
+                                .small()
+                                .ghost()
+                                .label("Revert")
+                                .tooltip("Back to the saved tone. Undo brings your edits back")
+                                .on_click(
+                                    cx.listener(|this, _, window, cx| this.revert(window, cx)),
+                                ),
+                        )
+                    })
                     .child(
                         Button::new("undo")
                             .small()

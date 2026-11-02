@@ -3,7 +3,7 @@
 
 use crate::{session::Snapshot, tools::ToneSource};
 use amp_dsp::BlockKind;
-use amp_preset::{BlockPreset, CaptureEntry, Preset, SCHEMA_VERSION, ToneOrigin};
+use amp_preset::{BlockPreset, CaptureEntry, Preset, ToneOrigin};
 use amp_tone3000::{Model, Tone};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -326,14 +326,10 @@ pub(crate) fn build_proposal(
         blocks.push(build_block(block, snapshot, lookup, &mut adjusted)?);
     }
     check_chain(&blocks)?;
-    let preset = Preset {
-        schema: SCHEMA_VERSION,
-        name: name.chars().take(MAX_NAME).collect(),
-        author: "Amp GPUI assistant".to_owned(),
-        tags: input.tags.into_iter().take(MAX_TAGS).collect(),
-        notes: input.notes,
-        blocks,
-    };
+    let mut preset = Preset::new(name.chars().take(MAX_NAME).collect::<String>(), blocks);
+    preset.author = "Amp GPUI assistant".to_owned();
+    preset.tags = input.tags.into_iter().take(MAX_TAGS).collect();
+    preset.notes = input.notes;
     // A new tone isn't an edit of what's loaded, so a diff would only be noise.
     let changes = if keeps_current {
         change_list(&snapshot.preset.blocks, &preset.blocks)

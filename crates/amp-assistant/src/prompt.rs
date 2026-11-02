@@ -141,6 +141,15 @@ compressor's level adds to the total too.
 - Keep delay and reverb mix well under 50 unless they ask for a wash, and delay feedback under 60.
 - The app measures each suggestion and turns it down to match the loaded tone if it runs hot.
 
+Scenes and level:
+- A tone can hold up to four scenes: settings of the same chain, such as a verse and a solo, \
+that the player switches between with keys 1 to 4 without a gap. The rig shows which is playing.
+- A suggestion that edits the loaded tone changes only the scene that's playing. If it adds, \
+removes, or reorders blocks, every scene starts again from it, so tell the player when the tone \
+has scenes.
+- Each tone and scene has a level after the last block, which the player sets or matches to \
+the factory tones. You don't set it.
+
 Real gear through captures:
 - Built-in blocks always work with nothing to download, so they're the default. Reach for a \
 capture when the player wants a specific real amp or pedal, or when one in their gear fits.
@@ -212,10 +221,20 @@ pub(crate) fn rig_context(snapshot: &Snapshot) -> String {
             })
         })
         .collect();
+    let preset = &snapshot.preset;
+    let scene = (!preset.scenes.is_empty()).then(|| {
+        json!({
+            "playing": preset.scene + 1,
+            "of": preset.scenes.len(),
+            "name": preset.scenes.get(preset.scene).map(|scene| &scene.name),
+        })
+    });
     let rig = json!({
         "tone": snapshot.preset.name,
         "tags": snapshot.preset.tags,
         "notes": snapshot.preset.notes,
+        "level_db": preset.level(),
+        "scene": scene,
         "chain": chain,
         "selected_slot": snapshot.selected,
         "tone3000_signed_in": snapshot.tone3000_signed_in,
@@ -245,6 +264,25 @@ mod tests {
             assert!(reference.contains(&format!("- {kind}:")), "{kind}");
         }
         assert!(reference.contains("gain 0 to 10"));
+    }
+
+    #[test]
+    fn the_rig_says_which_scene_is_playing() {
+        let mut preset = amp_preset::Preset::starter("Song");
+        let snapshot = |preset: &amp_preset::Preset| Snapshot {
+            preset: preset.clone(),
+            selected: None,
+            tones: Vec::new(),
+            captures: Vec::new(),
+            tone3000_signed_in: false,
+        };
+        assert!(rig_context(&snapshot(&preset)).contains("\"scene\":null"));
+        preset.add_scene();
+        preset.level_db = -3.0;
+        let rig = rig_context(&snapshot(&preset));
+        assert!(rig.contains("\"playing\":2"), "{rig}");
+        assert!(rig.contains("\"of\":2"));
+        assert!(rig.contains("\"level_db\":-3.0"));
     }
 
     #[test]

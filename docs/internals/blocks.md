@@ -23,7 +23,8 @@ file's `gear_type`.
   change the volume by 20 dB.
 - **A DC blocker.** A first-order high-pass at about 5 Hz, after the model.
 - **A rate check.** A model fed the wrong rate plays wrong with no error of its own,
-  so loading refuses anything but 48 kHz.
+  so loading refuses anything but 48 kHz. The chain builder then runs the block as
+  a pass-through and reports why, so the rest of the tone plays.
 
 With no model loaded, audio passes through untouched. **Quality** sets the slim size
 on A2 models, and does nothing on others.
@@ -147,6 +148,21 @@ series. The comb lengths are prime-spaced to keep echoes from lining up, and a
 | `size` | Size | % | 0 | 100 | 50 |
 | `damping` | Damping | % | 0 | 100 | 40 |
 | `mix` | Mix | % | 0 | 100 | 20 |
+
+## Tone level
+
+Every chain ends in a `Trim` (`trim.rs`), one slot after the last block. It's the
+preset's `level_db`, or the playing scene's, from -24 to 12 dB, smoothed like every
+other gain. It isn't a block in the preset and can't be moved or removed.
+
+## Trails
+
+A block whose `has_tail` returns true, which is the delay and the reverb, keeps
+running on silence after it's bypassed, and its output is added to the chain's.
+New input never reaches it, so this is what a pedal with trails does. It stops once
+its output stays under -80 dB for two seconds, longer than the longest delay, since
+repeats have silence between them, and it's reset then. Turning it back on stops
+the trail and it carries on from where its state is.
 
 ## Metronome
 

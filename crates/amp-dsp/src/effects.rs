@@ -206,6 +206,10 @@ impl Block for Reverb {
         }
     }
 
+    fn has_tail(&self) -> bool {
+        true
+    }
+
     fn reset(&mut self) {
         for comb in &mut self.combs {
             comb.line.fill(0.0);

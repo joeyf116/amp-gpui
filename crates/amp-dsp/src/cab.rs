@@ -51,8 +51,15 @@ impl IrCab {
 
     /// Loads a WAV impulse response. Must run off the audio thread.
     pub fn load(path: &Path, sample_rate: u32) -> Result<Self, DspError> {
-        let (samples, file_rate) = read_mono(path)?;
+        let (samples, file_rate) = Self::read(path)?;
         Self::from_samples(&samples, file_rate, sample_rate)
+    }
+
+    /// Reads a WAV impulse response as mono samples and the file's rate, for
+    /// [`Self::from_samples`]. Keeping the two apart lets a caller read a file
+    /// once and build from it many times.
+    pub fn read(path: &Path) -> Result<(Vec<f32>, u32), DspError> {
+        read_mono(path)
     }
 
     pub fn from_samples(

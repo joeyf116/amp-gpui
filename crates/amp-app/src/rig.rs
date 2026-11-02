@@ -21,7 +21,7 @@ use crate::{
 };
 use amp_dsp::{AmpInfo, ParamSpec, Pitch};
 use amp_engine::{Command, DeviceList, DeviceOption, ENGINE_RATE, Engine, Latency};
-use amp_preset::{BlockPreset, CaptureEntry, Library, Preset, PresetEntry};
+use amp_preset::{CaptureEntry, Library, Preset, PresetEntry};
 use assistant::Assistant;
 use audio::{Choice, channel_choices, device_choices, driver_choices, position};
 use explorer::Explorer;
@@ -59,6 +59,15 @@ const KNOB_INPUT: ParamSpec = ParamSpec {
     unit: "dB",
     min: -24.0,
     max: 24.0,
+    default: 0.0,
+};
+/// A tone's or scene's Level, after the last block.
+const KNOB_TONE_LEVEL: ParamSpec = ParamSpec {
+    id: "tone_level",
+    name: "Level",
+    unit: "dB",
+    min: amp_preset::LEVEL_RANGE.0,
+    max: amp_preset::LEVEL_RANGE.1,
     default: 0.0,
 };
 const KNOB_OUTPUT: ParamSpec = ParamSpec {
@@ -106,12 +115,18 @@ pub struct Rig {
     preset_name: Entity<InputState>,
     /// What each block's capture says about itself, in chain order.
     captures: Vec<Option<AmpInfo>>,
+    /// Why a block's file couldn't be used, in chain order. That block plays
+    /// as a pass-through, or the built-in cabinet.
+    problems: Vec<Option<SharedString>>,
     /// Counts chain builds, so a slow one can't overwrite a newer edit.
     build: u64,
-    /// The board as last saved or loaded, to tell when there are unsaved edits.
-    saved_blocks: Vec<BlockPreset>,
+    /// The tone as last saved or loaded, to tell when there are unsaved edits
+    /// and to go back to. `None` when the library has no tone by this name.
+    saved: Option<Preset>,
     /// Set until the first tone loads, which isn't an edit to undo.
     starting: bool,
+    /// Set while Match level is measuring the tone.
+    matching_level: bool,
     history: Vec<Preset>,
     future: Vec<Preset>,
     /// The knob being turned, so one long turn is one step of undo.
@@ -137,6 +152,8 @@ pub struct Rig {
 
     selected: Option<usize>,
     hover_gap: Option<usize>,
+    /// A unit a capture is held over, which a drop swaps the capture into.
+    hover_swap: Option<usize>,
     smoke_phase: f32,
 
     devices: DeviceList,
@@ -253,6 +270,7 @@ impl Rig {
         let name = preset.name.clone();
         let preset_name = cx.new(|cx| InputState::new(window, cx).default_value(name));
         let captures = vec![None; preset.blocks.len()];
+        let problems = vec![None; preset.blocks.len()];
         let focus = cx.focus_handle();
         focus.focus(window, cx);
         let explorer = Explorer::new(window, cx);
@@ -269,9 +287,11 @@ impl Rig {
             preset,
             preset_name,
             captures,
+            problems,
             build: 0,
-            saved_blocks: Vec::new(),
+            saved: None,
             starting: true,
+            matching_level: false,
             history: Vec::new(),
             future: Vec::new(),
             last_param: None,
@@ -293,6 +313,7 @@ impl Rig {
             gear_open: false,
             selected: None,
             hover_gap: None,
+            hover_swap: None,
             smoke_phase: 0.0,
             devices,
             asio_devices: Vec::new(),
@@ -492,6 +513,11 @@ impl Render for Rig {
             .on_action(cx.listener(|this, _: &CompareTrial, window, cx| {
                 this.compare_trial(window, cx);
             }))
+            .on_action(cx.listener(|this, _: &SaveTone, _, cx| this.save_preset(cx)))
+            .on_action(cx.listener(|this, _: &Scene1, _, cx| this.select_scene(0, cx)))
+            .on_action(cx.listener(|this, _: &Scene2, _, cx| this.select_scene(1, cx)))
+            .on_action(cx.listener(|this, _: &Scene3, _, cx| this.select_scene(2, cx)))
+            .on_action(cx.listener(|this, _: &Scene4, _, cx| this.select_scene(3, cx)))
             .bg(style::window())
             .text_color(cx.theme().foreground)
             .child(self.render_backdrop())

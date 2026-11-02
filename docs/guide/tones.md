@@ -60,18 +60,33 @@ they need no captures or impulse responses.
 
 ## Save a tone
 
-**Save** in the header writes your edits to the tone that's loaded.
+**Save** in the header, or ++ctrl+s++, writes your edits over the tone that's
+loaded, including all its [scenes](scenes.md).
 
-To save a copy, open the Tone Explorer, type a new name next to **Save as** at the
-bottom, and press **Save**. Saving under the name of an existing tone
-replaces it. That's also the way
-to rename a tone or start a variation.
+To keep the tone you started from, open the Tone Explorer, type a name next to
+**Name** at the bottom, and press **Save as new**. It never replaces another tone:
+if the name is taken, a number is added, such as `Fern Crunch 2`. That's also the
+way to start a variation, or to rename a tone and then delete the old one.
+
+**Revert** appears next to **Save** while a saved tone has edits. It puts the tone
+back as it was saved, and **Undo** brings your edits back if you change your mind.
 
 Moving to another tone never loses unsaved edits. Press **Undo** to step back to them.
 
 A name needs at least one letter or number. Two names that differ only in
-punctuation or case, like `Lead #2` and `lead 2`, share one file, so the second
-save replaces the first.
+punctuation or case, like `Lead #2` and `lead 2`, share one file, so **Save as new**
+treats the second as taken.
+
+## When a file is missing
+
+A tone still loads when a capture or cabinet IR it uses isn't in your library, for
+example from a pack someone shared without its files. The unit that needs the file
+shows a **!** and its panel says which file is missing.
+
+- A missing capture passes your signal through until you press **Locate file** and
+  choose the `.nam`.
+- A missing cabinet IR plays the built-in cabinet until you press **Load cab IR**.
+- TONE3000 files download again through your own account, as before.
 
 ## Delete a tone
 

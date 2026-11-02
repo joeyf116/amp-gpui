@@ -62,7 +62,13 @@ impl NamAmp {
 
     /// Loads a `.nam` file. Must run off the audio thread.
     pub fn load(path: &Path, sample_rate: u32) -> Result<(Self, AmpInfo), DspError> {
-        Self::from_nam(&NamModel::from_file(path)?, sample_rate)
+        Self::from_nam(&Self::read(path)?, sample_rate)
+    }
+
+    /// Parses a `.nam` file without preparing it to run. Parsing is most of
+    /// the cost of a load, so a parsed file can be kept and built from again.
+    pub fn read(path: &Path) -> Result<NamModel, DspError> {
+        Ok(NamModel::from_file(path)?)
     }
 
     pub fn from_nam(nam: &NamModel, sample_rate: u32) -> Result<(Self, AmpInfo), DspError> {

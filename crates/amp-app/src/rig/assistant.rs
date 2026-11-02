@@ -6,7 +6,7 @@
 //! Nothing Claude says changes the rig. A press does, and that press is what
 //! allows a TONE3000 download under their terms.
 
-use super::{Overlay, Rig, tone3000::fetch_for_block};
+use super::{Overlay, Rig, tone3000::fetch_for_block, tones::unique_name};
 use crate::settings::data_dir;
 use amp_assistant::{
     Chat, ChatStore, ChatSummary, Client, Error, Event, Host, ModelChoice, PickerRequest, Proposal,
@@ -168,23 +168,6 @@ impl Host for Worker {
     fn canceled(&self) -> &AtomicBool {
         &self.cancel
     }
-}
-
-/// `name`, or the first free name after it. A suggestion never replaces a tone
-/// the player already has.
-fn unique_name(name: &str, taken: &[&str]) -> String {
-    let free = |candidate: &str| {
-        !taken
-            .iter()
-            .any(|other| other.eq_ignore_ascii_case(candidate))
-    };
-    if free(name) {
-        return name.to_owned();
-    }
-    (2..)
-        .map(|number| format!("{name} {number}"))
-        .find(|candidate| free(candidate))
-        .unwrap_or_else(|| name.to_owned())
 }
 
 /// Downloads what a suggestion needs, and turns it down if it would jump out
@@ -624,7 +607,11 @@ impl Rig {
             .as_ref()
             .map_or_else(|| self.preset.clone(), |trial| trial.before.clone());
         let library = self.library.clone();
-        let preset = proposal.preset.clone();
+        let mut preset = proposal.preset.clone();
+        // An edit keeps the tone's Level, so it's measured as it would play.
+        if proposal.edits_current {
+            preset.level_db = reference.level_db;
+        }
         let measured_against = reference.clone();
         cx.spawn_in(window, async move |this, cx| {
             let task = cx
@@ -658,12 +645,13 @@ impl Rig {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let mut after = preset;
-        if proposal.edits_current {
-            after.name.clone_from(&before.name);
-            after.tags.clone_from(&before.tags);
-            after.notes.clone_from(&before.notes);
-        }
+        // An edit is the same tone with a new chain: its name, tags, notes, and
+        // scenes stay, and the scene that's playing takes the suggestion.
+        let after = if proposal.edits_current {
+            before.with_chain(preset.blocks, preset.level_db)
+        } else {
+            preset
+        };
         if self.assistant.trial.is_none() {
             self.remember();
         }
@@ -730,7 +718,8 @@ impl Rig {
             unique_name(&name, &taken)
         };
         self.preset_name
-            .update(cx, |input, cx| input.set_value(name, window, cx));
+            .update(cx, |input, cx| input.set_value(name.clone(), window, cx));
+        self.preset.name = name;
         self.save_preset(cx);
     }
 
@@ -785,17 +774,5 @@ impl Rig {
             ),
             cx,
         );
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::unique_name;
-
-    #[test]
-    fn a_suggestion_never_takes_an_existing_name() {
-        assert_eq!(unique_name("Thaw", &["Moss"]), "Thaw");
-        assert_eq!(unique_name("Thaw", &["thaw"]), "Thaw 2");
-        assert_eq!(unique_name("Thaw", &["Thaw", "Thaw 2"]), "Thaw 3");
     }
 }

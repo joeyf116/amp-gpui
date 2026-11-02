@@ -2,18 +2,21 @@
 //! order and takes drags from the gear drawer or along itself, with live
 //! changes on every drop. The stage shows the selected unit up close.
 
-use super::{AMP_QUALITY, FOOTER_HEIGHT, HEADER_HEIGHT, Overlay, Rig, assistant_view};
+use super::{
+    AMP_QUALITY, FOOTER_HEIGHT, HEADER_HEIGHT, KNOB_TONE_LEVEL, Overlay, Rig, assistant_view,
+    explorer::pill,
+};
 use crate::{
     art::{self, GearArt, STAGE_HEIGHT, Shape},
-    knob::KnobLook,
+    knob::{Knob, KnobLook},
     style::{self, bar, fog, glow, hairline, moss, moss_glow, pane},
 };
 use amp_dsp::{AmpInfo, BlockKind};
-use amp_preset::{AssetKind, BlockPreset, CaptureEntry, CaptureKind};
+use amp_preset::{AssetKind, BlockPreset, CaptureEntry, CaptureKind, MAX_SCENES};
 use gpui_kit::{
     base::spring,
     component::{
-        ActiveTheme, Sizable, StyledExt,
+        ActiveTheme, Disableable, Sizable, StyledExt,
         button::{Button, ButtonVariants},
         h_flex, v_flex,
     },
@@ -23,6 +26,8 @@ use gpui_kit::{
 
 const GAP: f32 = 16.0;
 const STRIP_HEIGHT: f32 = 158.0;
+const SCENE_BAR_HEIGHT: f32 = 48.0;
+const SCENE_LEVEL_KNOB: Pixels = px(30.);
 const UNIT_SLOT: f32 = 114.0;
 /// How much of a thumbnail pedal is its footswitch.
 const FOOTSWITCH_SHARE: f32 = 0.42;
@@ -54,11 +59,7 @@ impl Gear {
         match self {
             Self::BuiltIn(kind) => BlockPreset::new(*kind, true),
             Self::Capture(capture) => {
-                let kind = match capture.kind {
-                    CaptureKind::Amp => BlockKind::Amp,
-                    CaptureKind::Pedal => BlockKind::Pedal,
-                };
-                let mut block = BlockPreset::new(kind, true);
+                let mut block = BlockPreset::new(capture_block_kind(capture.kind), true);
                 block.asset = Some(capture.asset.clone());
                 block.origin = capture.origin.clone();
                 block
@@ -71,6 +72,14 @@ impl Gear {
             Self::BuiltIn(kind) => block_art(&BlockPreset::new(*kind, true), None),
             Self::Capture(capture) => block_art(&self.block(), Some(capture.title.as_str())),
         }
+    }
+}
+
+/// The block a capture of this kind runs in.
+fn capture_block_kind(kind: CaptureKind) -> BlockKind {
+    match kind {
+        CaptureKind::Amp => BlockKind::Amp,
+        CaptureKind::Pedal => BlockKind::Pedal,
     }
 }
 
@@ -148,6 +157,7 @@ impl Rig {
 
     fn drop_on_board(&mut self, drag: &BoardDrag, gap: usize, cx: &mut Context<Self>) {
         self.hover_gap = None;
+        self.hover_swap = None;
         match &drag.source {
             DragSource::Rack(gear) => self.insert_block(gear.block(), gap, cx),
             DragSource::Board(from) => self.move_block(*from, landing(*from, gap), cx),
@@ -157,8 +167,9 @@ impl Rig {
     pub(super) fn insert_block(&mut self, block: BlockPreset, slot: usize, cx: &mut Context<Self>) {
         self.remember();
         let slot = slot.min(self.preset.blocks.len());
-        self.preset.blocks.insert(slot, block);
+        self.preset.insert_block(slot, block);
         self.captures.insert(slot, None);
+        self.problems.insert(slot, None);
         self.selected = Some(slot);
         self.rebuild_chain(cx);
     }
@@ -168,19 +179,45 @@ impl Rig {
             return;
         }
         self.remember();
-        let block = self.preset.blocks.remove(from);
-        self.preset.blocks.insert(to, block);
+        self.preset.move_block(from, to);
         let capture = self.captures.remove(from);
         self.captures.insert(to, capture);
+        let problem = self.problems.remove(from);
+        self.problems.insert(to, problem);
         self.selected = Some(to);
         self.rebuild_chain(cx);
     }
 
     fn remove_block(&mut self, slot: usize, cx: &mut Context<Self>) {
         self.remember();
-        self.preset.blocks.remove(slot);
+        self.preset.remove_block(slot);
         self.captures.remove(slot);
+        self.problems.remove(slot);
         self.selected = None;
+        self.rebuild_chain(cx);
+    }
+
+    /// Puts another capture in a unit, keeping its place and its settings, in
+    /// every scene. This is how a player auditions captures against each other.
+    pub(super) fn swap_capture(
+        &mut self,
+        slot: usize,
+        capture: &CaptureEntry,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(block) = self.preset.blocks.get(slot) else {
+            return;
+        };
+        if block.kind != capture_block_kind(capture.kind)
+            || block.asset.as_ref() == Some(&capture.asset)
+        {
+            return;
+        }
+        self.remember();
+        let block = &mut self.preset.blocks[slot];
+        block.asset = Some(capture.asset.clone());
+        block.origin.clone_from(&capture.origin);
+        self.selected = Some(slot);
         self.rebuild_chain(cx);
     }
 
@@ -200,11 +237,9 @@ impl Rig {
         self.remember();
         let mut order: Vec<usize> = (0..self.preset.blocks.len()).collect();
         order.sort_by_key(|slot| self.shape_of(*slot).rank());
-        self.preset.blocks = order
-            .iter()
-            .map(|s| self.preset.blocks[*s].clone())
-            .collect();
+        self.preset.reorder(&order);
         self.captures = order.iter().map(|s| self.captures[*s].clone()).collect();
+        self.problems = order.iter().map(|s| self.problems[*s].clone()).collect();
         self.selected = None;
         self.rebuild_chain(cx);
     }
@@ -326,10 +361,28 @@ impl Rig {
     }
 
     fn set_hover_gap(&mut self, gap: usize, cx: &mut Context<Self>) {
-        if self.hover_gap != Some(gap) {
+        if self.hover_gap != Some(gap) || self.hover_swap.is_some() {
             self.hover_gap = Some(gap);
+            self.hover_swap = None;
             cx.notify();
         }
+    }
+
+    fn set_hover_swap(&mut self, slot: usize, cx: &mut Context<Self>) {
+        if self.hover_swap != Some(slot) {
+            self.hover_swap = Some(slot);
+            self.hover_gap = None;
+            cx.notify();
+        }
+    }
+
+    /// The capture in a drag from the drawer, if it can swap into `slot`.
+    fn swappable(&self, drag: &BoardDrag, slot: usize) -> Option<CaptureEntry> {
+        let DragSource::Rack(Gear::Capture(capture)) = &drag.source else {
+            return None;
+        };
+        let block = self.preset.blocks.get(slot)?;
+        (block.kind == capture_block_kind(capture.kind)).then(|| (**capture).clone())
     }
 
     fn render_unit(&self, slot: usize, cx: &mut Context<Self>) -> impl IntoElement {
@@ -339,6 +392,9 @@ impl Rig {
         let enabled = block.enabled;
         let is_stomp = art.shape.is_stomp();
         let badge = block.origin.as_ref().map(|origin| self.tone_badge(origin));
+        let swap_target = self.hover_swap == Some(slot) && cx.has_active_drag();
+        let has_problem = self.problems.get(slot).is_some_and(Option::is_some);
+        let warning = cx.theme().warning;
         let drag = BoardDrag {
             source: DragSource::Board(slot),
             art: art.clone(),
@@ -352,14 +408,26 @@ impl Rig {
             .on_drag(drag, |drag, _, _, cx| cx.new(|_| drag.clone()))
             .on_drag_move::<BoardDrag>(cx.listener(
                 move |this, event: &DragMoveEvent<BoardDrag>, _, cx| {
-                    if event.bounds.contains(&event.event.position) {
-                        let middle = event.bounds.center().x;
-                        let gap = slot + usize::from(event.event.position.x > middle);
-                        this.set_hover_gap(gap, cx);
+                    if !event.bounds.contains(&event.event.position) {
+                        return;
                     }
+                    // A capture held over a unit of its own kind swaps into it.
+                    if this.swappable(event.drag(cx), slot).is_some() {
+                        this.set_hover_swap(slot, cx);
+                        return;
+                    }
+                    let middle = event.bounds.center().x;
+                    let gap = slot + usize::from(event.event.position.x > middle);
+                    this.set_hover_gap(gap, cx);
                 },
             ))
             .on_drop(cx.listener(move |this, drag: &BoardDrag, _, cx| {
+                if this.hover_swap == Some(slot)
+                    && let Some(capture) = this.swappable(drag, slot)
+                {
+                    this.hover_swap = None;
+                    return this.swap_capture(slot, &capture, cx);
+                }
                 let gap = this.hover_gap.unwrap_or(slot);
                 this.drop_on_board(drag, gap, cx);
             }))
@@ -388,7 +456,33 @@ impl Rig {
                                     })),
                             )
                         })
-                        .children(badge),
+                        .children(badge)
+                        .when(swap_target, |unit| {
+                            unit.rounded_lg()
+                                .border_2()
+                                .border_color(moss())
+                                .shadow(vec![glow(0.6, 12.0)])
+                        })
+                        .when(has_problem, |unit| {
+                            // A file this unit needs is missing, so it's passing
+                            // the signal through. The panel says which.
+                            unit.child(
+                                div()
+                                    .absolute()
+                                    .top(px(4.))
+                                    .right(px(4.))
+                                    .size(px(16.))
+                                    .rounded_full()
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .bg(warning)
+                                    .text_color(hsla(0.0, 0.0, 0.05, 1.0))
+                                    .text_xs()
+                                    .font_semibold()
+                                    .child("!"),
+                            )
+                        }),
                 ),
             )
             .child(
@@ -495,6 +589,92 @@ impl Rig {
             )
     }
 
+    /// The tone's scenes and its Level. A scene keeps every switch and knob of
+    /// the same chain, so moving between them is instant and tails ring on.
+    fn render_scene_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let scenes = self.preset.scenes.len();
+        let playing = self.preset.scene;
+        let pills: Vec<AnyElement> = (0..scenes)
+            .map(|index| {
+                let name = &self.preset.scenes[index].name;
+                let title = if name.is_empty() {
+                    format!("Scene {}", index + 1)
+                } else {
+                    name.clone()
+                };
+                pill(("scene", index), title, index == playing)
+                    .on_click(cx.listener(move |this, _, _, cx| this.select_scene(index, cx)))
+                    .into_any_element()
+            })
+            .collect();
+        let level = Knob::new(
+            "tone-level",
+            KNOB_TONE_LEVEL,
+            self.preset.level(),
+            SCENE_LEVEL_KNOB,
+            cx.listener(|this, value: &f32, _, cx| this.set_tone_level(*value, cx)),
+        );
+        let level_label = if scenes > 0 {
+            "Scene level"
+        } else {
+            "Tone level"
+        };
+        h_flex()
+            .flex_shrink_0()
+            .h(px(SCENE_BAR_HEIGHT))
+            .px_3()
+            .gap_2()
+            .items_center()
+            .border_b_1()
+            .border_color(hairline())
+            .bg(pane())
+            .child(div().text_xs().text_color(fog()).child("Scenes"))
+            .when(scenes == 0, |bar| {
+                bar.child(
+                    div()
+                        .text_xs()
+                        .text_color(fog())
+                        .child("One sound. Add a scene for another setting of this chain."),
+                )
+            })
+            .children(pills)
+            .when(scenes < MAX_SCENES, |bar| {
+                bar.child(
+                    Button::new("add-scene")
+                        .small()
+                        .ghost()
+                        .label(if scenes == 0 { "Add scene" } else { "+" })
+                        .tooltip("Copies this sound. Keys 1 to 4 switch scenes")
+                        .on_click(cx.listener(|this, _, _, cx| this.add_scene(cx))),
+                )
+            })
+            .when(scenes > 0, |bar| {
+                bar.child(
+                    Button::new("remove-scene")
+                        .small()
+                        .ghost()
+                        .label("Remove scene")
+                        .on_click(cx.listener(|this, _, _, cx| this.remove_scene(cx))),
+                )
+            })
+            .child(div().flex_1())
+            .child(div().text_xs().text_color(fog()).child(level_label))
+            .child(level)
+            .child(
+                Button::new("match-level")
+                    .small()
+                    .ghost()
+                    .label(if self.matching_level {
+                        "Matching"
+                    } else {
+                        "Match level"
+                    })
+                    .disabled(self.matching_level)
+                    .tooltip("Sets the level to sit with the factory tones")
+                    .on_click(cx.listener(|this, _, _, cx| this.match_level(cx))),
+            )
+    }
+
     fn render_details(&self, slot: usize, cx: &mut Context<Self>) -> impl IntoElement {
         let block = &self.preset.blocks[slot];
         let kind = block.kind;
@@ -524,6 +704,8 @@ impl Rig {
             kind,
             BlockKind::Amp | BlockKind::Pedal | BlockKind::Cab | BlockKind::Tube
         );
+        let problem = self.problems.get(slot).cloned().flatten();
+        let swaps = self.render_swaps(slot, cx);
         let credit = block
             .origin
             .as_ref()
@@ -587,12 +769,41 @@ impl Rig {
                         .child(self.knob(slot, 0, DETAILS_KNOB, cx)),
                 )
             })
+            .when_some(problem, |panel, problem| {
+                panel.child(
+                    v_flex()
+                        .gap_1()
+                        .child(
+                            div()
+                                .text_sm()
+                                .text_color(cx.theme().warning)
+                                .child(problem),
+                        )
+                        .child(div().text_xs().text_color(fog()).child(if is_cab {
+                            "Playing the built-in cabinet until it's found."
+                        } else {
+                            "Passing the signal through until it's found."
+                        }))
+                        .when(kind != BlockKind::Cab, |column| {
+                            column.child(
+                                Button::new("locate-capture")
+                                    .small()
+                                    .outline()
+                                    .label("Locate file")
+                                    .on_click(cx.listener(move |this, _, window, cx| {
+                                        this.locate_capture(slot, window, cx);
+                                    })),
+                            )
+                        }),
+                )
+            })
             .when(doubled_cab, |panel| {
                 panel.child(div().text_sm().text_color(cx.theme().warning).child(
                     "One of your captures already includes a cabinet, so you may be hearing two.",
                 ))
             })
             .children(credit)
+            .children(swaps)
             .child(
                 v_flex()
                     .gap_1()
@@ -650,6 +861,60 @@ impl Rig {
             )
     }
 
+    /// The other captures of this unit's kind, to swap in with one click. The
+    /// unit keeps its place and its settings, so they compare fairly.
+    fn render_swaps(&self, slot: usize, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let block = &self.preset.blocks[slot];
+        let captures: Vec<CaptureEntry> = self
+            .catalog
+            .iter()
+            .filter(|capture| capture_block_kind(capture.kind) == block.kind)
+            .cloned()
+            .collect();
+        // Worth a list only when there's something other than what's loaded.
+        let others = captures
+            .iter()
+            .filter(|capture| block.asset.as_ref() != Some(&capture.asset))
+            .count();
+        if others == 0 {
+            return None;
+        }
+        let rows: Vec<AnyElement> = captures
+            .into_iter()
+            .enumerate()
+            .map(|(index, capture)| {
+                let current = block.asset.as_ref() == Some(&capture.asset);
+                div()
+                    .id(("swap", index))
+                    .px_2()
+                    .py_1()
+                    .rounded_md()
+                    .text_sm()
+                    .truncate()
+                    .cursor_pointer()
+                    .when(current, |row| row.text_color(moss()).bg(moss_glow(0.08)))
+                    .when(!current, |row| row.hover(|row| row.bg(moss_glow(0.06))))
+                    .child(capture.title.clone())
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.swap_capture(slot, &capture, cx);
+                    }))
+                    .into_any_element()
+            })
+            .collect();
+        Some(
+            v_flex()
+                .gap_px()
+                .child(
+                    div()
+                        .text_xs()
+                        .text_color(fog())
+                        .child("Swap capture, keeping these settings"),
+                )
+                .children(rows)
+                .into_any_element(),
+        )
+    }
+
     /// Fits the unit to the room left in the window, so nothing clips on a
     /// small one.
     fn stage_scale(&self, shape: &Shape, window: &Window) -> f32 {
@@ -658,6 +923,7 @@ impl Rig {
             - HEADER_HEIGHT
             - FOOTER_HEIGHT
             - STRIP_HEIGHT
+            - SCENE_BAR_HEIGHT
             - STAGE_MARGIN;
         let drawer = if self.gear_open { DRAWER_WIDTH } else { 0.0 };
         let panel = if self.assistant.open {
@@ -741,6 +1007,7 @@ impl Rig {
         v_flex()
             .size_full()
             .child(self.render_strip(window, cx))
+            .child(self.render_scene_bar(cx))
             .child(
                 h_flex()
                     .flex_1()

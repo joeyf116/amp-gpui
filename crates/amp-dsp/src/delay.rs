@@ -57,6 +57,10 @@ impl Block for Delay {
         }
     }
 
+    fn has_tail(&self) -> bool {
+        true
+    }
+
     fn reset(&mut self) {
         self.line.fill(0.0);
     }

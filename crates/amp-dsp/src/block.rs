@@ -12,6 +12,13 @@ pub trait Block: Send {
 
     /// Returns to silence, dropping tails and history.
     fn reset(&mut self);
+
+    /// Whether this block keeps sounding after its input stops, like a delay's
+    /// repeats. A block that does lets its tail fade out when it's bypassed,
+    /// the way a pedal with trails does, instead of cutting it off.
+    fn has_tail(&self) -> bool {
+        false
+    }
 }
 
 /// A control a block exposes to presets and the UI.

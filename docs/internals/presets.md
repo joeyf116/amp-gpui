@@ -50,6 +50,54 @@ A block that uses a file also has an `asset`:
 }
 ```
 
+A tone with [scenes](../guide/scenes.md) also has `scenes`, `scene`, and
+`level_db`:
+
+```json
+{
+  "schema": 1,
+  "name": "Verse and Solo",
+  "blocks": [
+    { "kind": "drive", "enabled": true, "params": { "drive": 18.0, "level": -4.0 } },
+    { "kind": "tube", "enabled": true, "params": { "gain": 4.6, "master": 4.0 } }
+  ],
+  "level_db": 3.0,
+  "scenes": [
+    {
+      "level_db": -1.5,
+      "blocks": [
+        { "enabled": false, "params": { "drive": 12.0, "level": -6.0 } },
+        { "enabled": true, "params": { "gain": 4.6, "master": 4.0 } }
+      ]
+    },
+    {
+      "level_db": 3.0,
+      "blocks": [
+        { "enabled": true, "params": { "drive": 18.0, "level": -4.0 } },
+        { "enabled": true, "params": { "gain": 4.6, "master": 4.0 } }
+      ]
+    }
+  ],
+  "scene": 1
+}
+```
+
+- `blocks` and `level_db` always hold the scene that's playing. A build of the app
+  from before scenes ignores the other fields and plays that scene.
+- A scene stores each block's `enabled` and `params`, one entry per block in chain
+  order. The chain itself, and each block's file, are shared by every scene.
+- `Preset::insert_block`, `remove_block`, `move_block`, `reorder`, and
+  `replace_block` keep scenes in line with the chain. Anything that edits `blocks`
+  directly has to use them.
+- A preset from a file goes through `align_scenes` when it's read. A scene that
+  doesn't have one entry per block is reset to the playing scene, keeping its name
+  and level, and a lone scene is dropped.
+- `sounds_like` compares two presets whichever scene each is showing. The unsaved
+  mark uses it, so switching scenes isn't an edit.
+- When the assistant edits the loaded tone, `with_chain` gives the playing scene the
+  suggestion. If the chain still lines up kind by kind, the other scenes keep their
+  settings; otherwise they all start again from the suggestion.
+
 The `kind` values are listed in the [block reference](blocks.md). An asset's `kind`
 is `nam_model` or `impulse_response`, and its `name` is for display only.
 
@@ -60,6 +108,8 @@ is `nam_model` or `impulse_response`, and its `name` is for display only.
 - Values are clamped to the parameter's range when read, so a bad file can't push a
   block out of bounds.
 - A preset with a newer `schema` than the app is refused, with a message saying so.
+- New fields are optional and leave `schema` at 1. A plain tone saves without
+  them, so its file is the same as before.
 - One broken file doesn't hide the rest. The others load, and the app shows the
   error.
 

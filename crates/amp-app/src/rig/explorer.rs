@@ -709,7 +709,7 @@ impl Rig {
         }
         self.settings.favorites.retain(|tone| *tone != name);
         self.settings.recent.retain(|tone| *tone != name);
-        self.saved_blocks.clear();
+        self.saved = None;
         self.save_settings(cx);
         self.refresh_presets();
         cx.notify();
@@ -725,7 +725,7 @@ impl Rig {
             .py_2()
             .border_t_1()
             .border_color(hairline())
-            .child(div().text_sm().text_color(fog()).child("Save as"))
+            .child(div().text_sm().text_color(fog()).child("Name"))
             .child(
                 div()
                     .w(px(240.))
@@ -735,8 +735,9 @@ impl Rig {
                 Button::new("save-as")
                     .small()
                     .primary()
-                    .label("Save")
-                    .on_click(cx.listener(|this, _, _, cx| this.save_preset(cx))),
+                    .label("Save as new")
+                    .tooltip("Keeps the tone you started from")
+                    .on_click(cx.listener(|this, _, window, cx| this.save_as_new(window, cx))),
             )
             .child(div().flex_1())
             .child(
@@ -796,7 +797,11 @@ impl Rig {
 }
 
 /// A filter you can see the state of. It's lit while applied.
-fn pill(id: impl Into<ElementId>, title: impl Into<SharedString>, lit: bool) -> Stateful<Div> {
+pub(super) fn pill(
+    id: impl Into<ElementId>,
+    title: impl Into<SharedString>,
+    lit: bool,
+) -> Stateful<Div> {
     div()
         .id(id)
         .flex()
